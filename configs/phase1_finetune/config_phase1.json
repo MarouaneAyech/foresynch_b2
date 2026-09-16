@@ -1,0 +1,23 @@
+{
+  "backbone": "iresnet50",
+  "pretrained_path": "/content/drive/MyDrive/research/forensic_fr/models/ms1mv3_arcface_r50_fp16/backbone.pth",
+  "pretrained_dataset": "MS1MV3",
+  "embedding_dim": 512,
+  "input_size": 112,
+  "num_classes": 100,
+  "arcface_margin": 0.5,
+  "arcface_scale": 64,
+  "optimizer": "adamw",
+  "lr": 0.0001,
+  "weight_decay": 0.1,
+  "batch_size": 64,
+  "epochs": 20,
+  "scheduler": "cosine",
+  "warmup_epochs": 1,
+  "seeds": [7, 42, 123],
+  "horizontal_flip_prob": 0.5,
+  "preprocessing": "BGR, normalize [-1, 1]",
+  "detector": "antelopev2",
+  "det_size": 320,
+  "_note": "optimizer/lr/weight_decay/epochs/warmup_epochs corriges le 2026-09-16 pour matcher le protocole reellement execute (AdamW, wd=0.1, 20 epochs, warmup=1 - code en dur dans piepline_version_stable.ipynb et Table 'hyperparams' du papier). La version d'origine indiquait SGD/wd=0.0005/epochs=30/warmup=2/momentum=0.9, jamais lus par le code d'entrainement (ces champs n'etaient pas branches sur CONFIG). Ces valeurs restent documentaires : la source de verite executee est training.trainer.RunConfig."
+}

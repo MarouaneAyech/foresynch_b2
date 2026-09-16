@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.pt
+*.pth
+*.npy
+*.npz
+.env
+
+# Notebooks legacy (superseded par src/forensic_fr + notebooks/colab_runner.ipynb) —
+# gardes en local comme reference historique, pas versionnes dans le depot public.
+/old code/
