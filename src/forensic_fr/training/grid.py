@@ -7,11 +7,13 @@ GRID: list[dict] = [
     {"mode": "ft_4"},
     {"mode": "ft_34"},
     {"mode": "full_ft"},
-    {"mode": "lora_4", "lora_r": 8},
-    {"mode": "lora_34", "lora_r": 8},
-    {"mode": "lora_34", "lora_r": 16},   # ablation de rang (Sec. 4.3 du papier)
-    {"mode": "full_lora", "lora_r": 8},
-    {"mode": "hybrid", "lora_r": 8},
+    {"mode": "lora_4", "lora_r": 8, "lora_alpha": 16},
+    {"mode": "lora_34", "lora_r": 8, "lora_alpha": 16},
+    # ablation de rang (Sec. 4.3 du papier / Table hyperparams) : alpha=32, PAS 16 —
+    # le scaling alpha/r doit rester 2.0 comme pour r=8 (16/8=2.0), pas retomber a 1.0.
+    {"mode": "lora_34", "lora_r": 16, "lora_alpha": 32},
+    {"mode": "full_lora", "lora_r": 8, "lora_alpha": 16},
+    {"mode": "hybrid", "lora_r": 8, "lora_alpha": 16},
 ]
 DEFAULT_SEEDS = [7, 42, 123]
 
@@ -30,6 +32,7 @@ def build_plan(
     return [
         RunConfig(
             mode=cell["mode"], seed=seed, lora_r=cell.get("lora_r", 8),
+            lora_alpha=cell.get("lora_alpha", 16),
             anchor=anchor, n_epochs=n_epochs, experiment_id=experiment_id,
         )
         for cell in cells
