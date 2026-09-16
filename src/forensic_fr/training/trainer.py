@@ -20,7 +20,7 @@ from ..models import ArcFaceHead, FullModel, LoRAConv2d, LoRALinear, iresnet50
 from ..seeding import set_seed
 from .checkpoint import checkpoint_name, save_checkpoint
 from .diagnostics import diagnose_trainable
-from .scenarios import SCENARIOS
+from .scenarios import SCENARIOS, freeze_all_batchnorm
 from .scheduler import cosine_lr
 
 
@@ -31,6 +31,7 @@ class RunConfig:
     lora_r: int = 8
     lora_alpha: int = 16
     anchor: bool = True            # False -> contrôle Phase 4.3.2.C (sans ancrage HQ)
+    freeze_bn: bool = False        # True -> contrôle Phase 3.2 (BN explicitement gelées)
     n_epochs: int = 20
     warmup: int = 1
     base_lr: float = 1e-4
@@ -88,6 +89,8 @@ def run_training(rc: RunConfig, verbose: bool = True) -> dict:
             pg["lr"] = lr
 
         full_model.train()
+        if rc.freeze_bn:
+            freeze_all_batchnorm(full_model.backbone)
         correct, total = 0, 0
         for images, labels in tqdm(loader, desc=f"{rc.mode} seed{rc.seed} epoch{epoch+1}",
                                     disable=not verbose):
@@ -125,6 +128,7 @@ def run_training(rc: RunConfig, verbose: bool = True) -> dict:
         "mode": rc.mode, "optimizer": "AdamW", "base_lr": rc.base_lr,
         "weight_decay": rc.weight_decay, "lora_r": lora_r, "lora_alpha": rc.lora_alpha,
         "n_lora_convs": scenario_result.n_lora_convs, "anchor": rc.anchor,
+        "freeze_bn": rc.freeze_bn,
         "n_epochs": rc.n_epochs, "warmup": rc.warmup, "seed": rc.seed,
         "checkpoint_path": str(ckpt_path), "results_b_epochs": history,
     })
@@ -135,8 +139,9 @@ def run_training(rc: RunConfig, verbose: bool = True) -> dict:
 
 
 def _save(model: nn.Module, run_dir: Path, rc: RunConfig, lora_r: int | None, epoch: int) -> Path:
-    name = checkpoint_name(rc.mode, rc.seed, lora_r, rc.anchor)
+    name = checkpoint_name(rc.mode, rc.seed, lora_r, rc.anchor, rc.freeze_bn)
     path = run_dir / "checkpoints" / name
     save_checkpoint(model, path, mode=rc.mode, seed=rc.seed, lora_r=lora_r,
-                     anchor=rc.anchor, epoch=epoch, run_config=asdict(rc))
+                     anchor=rc.anchor, freeze_bn=rc.freeze_bn, epoch=epoch,
+                     run_config=asdict(rc))
     return path

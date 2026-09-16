@@ -10,6 +10,9 @@ Exemples :
 
     # ablation de rang LoRA
     python scripts/run_single.py --mode lora_34 --seed 7 --lora-r 16
+
+    # contrôle Phase 3.2 : LoRA avec les BatchNorm explicitement gelées
+    python scripts/run_single.py --mode lora_34 --seed 42 --freeze-bn
 """
 import argparse
 import sys
@@ -28,6 +31,9 @@ def main() -> None:
     parser.add_argument("--lora-alpha", type=int, default=16)
     parser.add_argument("--no-anchor", action="store_true",
                          help="désactive le mélange 50/50 mugshot/surveillance")
+    parser.add_argument("--freeze-bn", action="store_true",
+                         help="gèle aussi les statistiques courantes BatchNorm "
+                              "(controle Phase 3.2, pas seulement les poids/affines)")
     parser.add_argument("--n-epochs", type=int, default=20)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--base-lr", type=float, default=1e-4)
@@ -38,7 +44,8 @@ def main() -> None:
 
     rc = RunConfig(
         mode=args.mode, seed=args.seed, lora_r=args.lora_r, lora_alpha=args.lora_alpha,
-        anchor=not args.no_anchor, n_epochs=args.n_epochs, warmup=args.warmup,
+        anchor=not args.no_anchor, freeze_bn=args.freeze_bn,
+        n_epochs=args.n_epochs, warmup=args.warmup,
         base_lr=args.base_lr, weight_decay=args.weight_decay,
         experiment_id=args.experiment_id, save_every=args.save_every,
     )

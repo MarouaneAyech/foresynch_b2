@@ -23,7 +23,9 @@ def load_checkpoint(model: nn.Module, path: Path, map_location: str = "cpu") -> 
     return ckpt
 
 
-def checkpoint_name(mode: str, seed: int, lora_r: int | None, anchor: bool) -> str:
+def checkpoint_name(mode: str, seed: int, lora_r: int | None, anchor: bool,
+                     freeze_bn: bool = False) -> str:
     r_tag = f"_r{lora_r}" if lora_r is not None else ""
     anchor_tag = "anchor" if anchor else "noanchor"
-    return f"{mode}{r_tag}_seed{seed}_{anchor_tag}.pt"
+    bn_tag = "_bnfrozen" if freeze_bn else ""
+    return f"{mode}{r_tag}_seed{seed}_{anchor_tag}{bn_tag}.pt"

@@ -97,6 +97,25 @@ def configure_hybrid(model: nn.Module, lora_r: int = 8, lora_alpha: int = 16, **
     return ScenarioResult(n_conv, n_fc)
 
 
+def freeze_all_batchnorm(model: nn.Module) -> int:
+    """Met tous les BatchNorm du modele en mode eval (statistiques courantes
+    figees), meme si le reste du modele reste en mode train pour le calcul du
+    gradient -- controle Phase 3.2 du plan (BN explicitement gelees). A rappeler
+    a chaque debut d'epoque : `full_model.train()` remet tout en mode train,
+    y compris les BN qu'on veut garder figees.
+
+    requires_grad=False sur les parametres affines (weight/bias) d'un BatchNorm
+    n'empeche PAS la mise a jour de running_mean/running_var : ces deux choses
+    sont independantes dans PyTorch. Seul .eval() bloque cette mise a jour.
+    """
+    n = 0
+    for m in model.modules():
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)):
+            m.eval()
+            n += 1
+    return n
+
+
 SCENARIOS: dict[str, Callable[..., ScenarioResult]] = {
     "full_ft": configure_full_ft,
     "ft_34": configure_ft_34,

@@ -131,7 +131,10 @@ def load_checkpoint_model(ckpt_path: Path, pretrained_path: str, embedding_dim: 
 def checkpoint_label(ckpt: dict) -> str:
     mode = ckpt["mode"]
     lora_r = ckpt.get("lora_r")
-    return f"{mode}_r{lora_r}" if lora_r else mode
+    label = f"{mode}_r{lora_r}" if lora_r else mode
+    if ckpt.get("freeze_bn"):
+        label += "_bnfrozen"
+    return label
 
 
 def analyze_checkpoint(ckpt_path: Path, pretrained_model: nn.Module, pretrained_path: str,
