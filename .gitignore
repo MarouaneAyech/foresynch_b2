@@ -10,3 +10,11 @@ __pycache__/
 # Notebooks legacy (superseded par src/forensic_fr + notebooks/colab_runner.ipynb) —
 # gardes en local comme reference historique, pas versionnes dans le depot public.
 /old code/
+
+# Papier non anonymise -- pas dans le depot public avant anonymisation (Phase 5.2 du plan)
+/paper/
+
+# Sorties d'analyse generees (CSV, figures, spectres) -- reproductibles depuis
+# analysis/scripts/, pas versionnees.
+/analysis/outputs/
+/analysis/figures/
