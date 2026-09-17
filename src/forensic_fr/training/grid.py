@@ -15,6 +15,10 @@ GRID: list[dict] = [
     # 3e point de l'ablation de rang, ajoute apres correction BN gelees (r=16 rapprochait
     # deja LoRA du fine-tuning sur ir 4.20m) -- meme ratio alpha/r=2.0 que les deux autres.
     {"mode": "lora_34", "lora_r": 32, "lora_alpha": 64},
+    # 4e et DERNIER point de l'ablation de rang (decide a l'avance, pas apres coup selon
+    # le resultat) -- complete la serie geometrique 8/16/32/64 pour une courbe
+    # log(rang)->performance a comparer au rang effectif mesure en Phase 1.1.
+    {"mode": "lora_34", "lora_r": 64, "lora_alpha": 128},
     {"mode": "full_lora", "lora_r": 8, "lora_alpha": 16},
     {"mode": "hybrid", "lora_r": 8, "lora_alpha": 16},
 ]
