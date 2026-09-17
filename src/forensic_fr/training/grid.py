@@ -12,6 +12,9 @@ GRID: list[dict] = [
     # ablation de rang (Sec. 4.3 du papier / Table hyperparams) : alpha=32, PAS 16 —
     # le scaling alpha/r doit rester 2.0 comme pour r=8 (16/8=2.0), pas retomber a 1.0.
     {"mode": "lora_34", "lora_r": 16, "lora_alpha": 32},
+    # 3e point de l'ablation de rang, ajoute apres correction BN gelees (r=16 rapprochait
+    # deja LoRA du fine-tuning sur ir 4.20m) -- meme ratio alpha/r=2.0 que les deux autres.
+    {"mode": "lora_34", "lora_r": 32, "lora_alpha": 64},
     {"mode": "full_lora", "lora_r": 8, "lora_alpha": 16},
     {"mode": "hybrid", "lora_r": 8, "lora_alpha": 16},
 ]
