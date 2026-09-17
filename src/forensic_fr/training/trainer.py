@@ -122,17 +122,23 @@ def run_training(rc: RunConfig, verbose: bool = True) -> dict:
 
     ckpt_path = _save(model, run_dir, rc, lora_r, epoch=rc.n_epochs)
 
-    history_path = run_dir / f"exp1_{rc.mode}.json"
-    all_history = json.loads(history_path.read_text()) if history_path.exists() else []
-    all_history.append({
+    # Un fichier par run (nom derive de celui du checkpoint), pas un fichier partage
+    # par mode. L'ancien schema ("exp1_{mode}.json", lu-modifie-reecrit a chaque run)
+    # subit une race condition des que deux sessions Colab (ou un restart de runtime
+    # avec un cache Drive perime) ecrivent a peu pres en meme temps : la deuxieme
+    # ecriture, basee sur une lecture anterieure a la premiere, ecrase les entrees
+    # que l'autre venait d'ajouter. Un fichier unique par run rend cette race
+    # impossible : aucune lecture-modification-ecriture partagee entre runs.
+    run_label = checkpoint_name(rc.mode, rc.seed, lora_r, rc.anchor, rc.freeze_bn)[:-3]
+    history_path = run_dir / f"exp1_{run_label}.json"
+    history_path.write_text(json.dumps([{
         "mode": rc.mode, "optimizer": "AdamW", "base_lr": rc.base_lr,
         "weight_decay": rc.weight_decay, "lora_r": lora_r, "lora_alpha": rc.lora_alpha,
         "n_lora_convs": scenario_result.n_lora_convs, "anchor": rc.anchor,
         "freeze_bn": rc.freeze_bn,
         "n_epochs": rc.n_epochs, "warmup": rc.warmup, "seed": rc.seed,
         "checkpoint_path": str(ckpt_path), "results_b_epochs": history,
-    })
-    history_path.write_text(json.dumps(all_history, indent=2))
+    }], indent=2))
 
     return {"history": history, "baseline": baseline, "checkpoint_path": str(ckpt_path),
             "history_path": str(history_path)}
