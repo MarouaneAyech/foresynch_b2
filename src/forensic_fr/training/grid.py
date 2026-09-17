@@ -18,22 +18,34 @@ GRID: list[dict] = [
 DEFAULT_SEEDS = [7, 42, 123]
 
 
+def cell_id(cell: dict) -> str:
+    """Identifiant precis d'une cellule, ex. 'lora_34_r16' -- distingue les deux
+    cellules qui partagent le meme mode (ablation de rang lora_34 r=8 vs r=16)."""
+    lora_r = cell.get("lora_r")
+    return f"{cell['mode']}_r{lora_r}" if lora_r is not None else cell["mode"]
+
+
 def build_plan(
     only: list[str] | None = None,
     seeds: list[int] | None = None,
     anchor: bool = True,
+    freeze_bn: bool = False,
     n_epochs: int = 20,
     experiment_id: str = "E5_LoRA",
 ) -> list[RunConfig]:
+    """`only` matche soit le mode (ex. 'lora_34' -> ses deux cellules r=8 et r=16),
+    soit l'id precis d'une cellule (ex. 'lora_34_r16' -> seulement celle-la)."""
     seeds = seeds if seeds is not None else DEFAULT_SEEDS
-    cells = [c for c in GRID if only is None or c["mode"] in only]
+    cells = [c for c in GRID
+             if only is None or c["mode"] in only or cell_id(c) in only]
     if not cells:
         raise ValueError(f"aucune config ne correspond a only={only!r}")
     return [
         RunConfig(
             mode=cell["mode"], seed=seed, lora_r=cell.get("lora_r", 8),
             lora_alpha=cell.get("lora_alpha", 16),
-            anchor=anchor, n_epochs=n_epochs, experiment_id=experiment_id,
+            anchor=anchor, freeze_bn=freeze_bn,
+            n_epochs=n_epochs, experiment_id=experiment_id,
         )
         for cell in cells
         for seed in seeds
