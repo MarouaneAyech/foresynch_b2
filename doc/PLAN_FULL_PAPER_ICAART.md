@@ -48,7 +48,7 @@ l'analyse spectrale comme cœur du statut Full Paper, et l'ensemble des Phases 0
 | 1 | Analyse spectrale | **faite** (1.1–1.4) | — |
 | 1bis | Correction BN, grille relancée, ablation de rang, runs de complétude | **faite** | — |
 | 2 | Exploitation des checkpoints : bootstrap, embeddings, CMC | à faire | cœur |
-| 3 | Contrôles : `fc-only` (indispensable), mesure mugshot, sans-ancrage (optionnel) | à faire | |
+| 3 | Contrôles : `fc-only` ✅, mesure mugshot, sans-ancrage (optionnel) | 3.1 faite | |
 | 4 | Restructuration et rédaction | Setup + Results faits ; le reste à faire | |
 | 5 | Finalisation et conformité | à faire | ⛔ |
 
@@ -290,7 +290,14 @@ Rang-5 et TPIR@FAR=1 % depuis les mêmes matrices. Seulement si la place le perm
 
 # PHASE 3 — Contrôles À FAIRE (réduits)
 
-## 3.1 Baseline `fc-only` — 3 seeds ⛔ INDISPENSABLE
+## 3.1 Baseline `fc-only` — 3 seeds ✅ FAITE (19–20/09/2026)
+
+**Résultat : +55.5±2.7** (100.0 | 100.0 | 87.8 | 97.8 | 90.4 | 58.8). ≈ LoRA layer4 terrain par
+terrain avec 26× plus de paramètres ; la projection seule fait la moitié du gain, l'autre
+moitié (ir 4.20 m) exige les convolutions et layer3. Intégré dans `exp_results.tex`
+(`tab:configs`, ligne de contrôle de `tab:scope`, paragraphe dédié). Détails dans
+`resultats_exp.md`.
+
 
 Fine-tuning de la seule projection `fc` + tête ArcFace, backbone gelé, **BN gelées**
 (même lecture que LoRA). Même protocole. Scénario à ajouter dans `training/scenarios.py`
@@ -308,10 +315,13 @@ devenu toute la grille. **BitFit reste optionnel** (scope layer3+4, biais + fc +
 faire seulement si la Phase 4 révèle un manque sur l'axe « coût croissant »
 (`fc-only` → BitFit → LoRA → FT sélectif → FT complet).
 
-## 3.3 Mesure passive mugshot (ex-4.3.2.B) — gratuit avec `eval_checkpoint.py`
+## 3.3 Mesure passive mugshot (ex-4.3.2.B) — ❌ NON RÉALISABLE avec le cache actuel
 
-Performance des modèles adaptés (FT et LoRA) sur les mugshots haute qualité tenus à l'écart :
-preuve directe de l'absence d'oubli catastrophique sous ancrage. Un tableau de 6 lignes.
+Le cache d'évaluation ne contient qu'un mugshot par identité de test — la galerie elle-même.
+Aucune probe HQ tenue à l'écart n'existe ; la mesure demanderait de reconstruire le cache
+depuis SCface (autres mugshots par identité). Abandonnée. L'argument anti-oubli repose sur
+les terrains conquis, préservés à 100 / 100 / 98.3 par toutes les configs BN gelées — une
+mesure directe, déjà dans les tables.
 
 ## 3.4 Contrôle sans ancrage — optionnel, 1 run
 
@@ -321,8 +331,8 @@ preuve directe de l'absence d'oubli catastrophique sous ancrage. Un tableau de 6
 l'hypothèse non démontrée dans le texte.
 
 **DoD 3 :**
-- [ ] `fc-only` × 3 seeds dans la grille, la table des configs et la table de portée
-- [ ] Tableau mugshot post-adaptation produit
+- [x] ~~`fc-only` × 3 seeds dans la grille, la table des configs et la table de portée~~
+- [x] ~~Tableau mugshot post-adaptation~~ — non réalisable, voir 3.3
 - [ ] (Optionnel) contrôle sans ancrage rapporté, qu'il confirme ou infirme
 
 ---
