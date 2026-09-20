@@ -48,6 +48,12 @@ DEFAULT_PAIRS = [
     ("lora_34_r32_anchor_bnfrozen", "lora_34_r8_anchor_bnfrozen"),
     ("lora_34_r32_anchor_bnfrozen", "lora_34_r16_anchor_bnfrozen"),
     ("lora_34_r32_anchor_bnfrozen", "lora_34_r64_anchor_bnfrozen"),
+    ("lora_34_r16_anchor_bnfrozen", "lora_34_r8_anchor_bnfrozen"),
+    ("lora_34_r64_anchor_bnfrozen", "lora_34_r16_anchor_bnfrozen"),
+    ("ft_34_anchor", "lora_34_r8_anchor_bnfrozen"),                 # le deficit de r=8 face a FT
+    ("full_lora_r8_anchor_bnfrozen", "lora_34_r8_anchor_bnfrozen"),  # effet du scope, LoRA
+    ("full_ft_anchor", "ft_34_anchor"),                              # effet du scope, FT
+    ("lora_34_r8_anchor_bnfrozen", "lora_4_r8_anchor_bnfrozen"),     # layer3, LoRA
 ]
 
 

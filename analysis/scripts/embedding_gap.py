@@ -6,10 +6,12 @@ Pour chaque probe, deux quantites lues dans les matrices de scores d'eval_checkp
   margin   = genuine - max cos(probe, mugshot d'une AUTRE identite)
              (> 0 <=> rank-1 correct : c'est la marge de decision)
 
-Deux figures, memes conventions que fig_headline.py (terrains conquis a gauche,
+Quatre figures (deux jeux x deux mesures), memes conventions que fig_headline.py (terrains conquis a gauche,
 challenge a droite, une couleur par configuration, legende sous l'axe) :
-  fig_embedding_gap.pdf   boxplots de `genuine` par terrain et par configuration
-  fig_margin.pdf          boxplots de `margin`, avec la frontiere de decision a 0
+  fig_embedding_gap.pdf      `genuine`, jeu "gain" : pre-entraine / FT l3+4 / LoRA r=32
+  fig_margin.pdf             `margin` (frontiere de decision a 0), meme jeu
+  fig_embedding_gap_bn.pdf   `genuine`, jeu "BN" : pre-entraine / Full LoRA gelee / derivante
+  fig_margin_bn.pdf          `margin`, meme jeu
 
 Configurations tracees (seeds regroupes) : pre-entraine (reference, gris), FT layer3+4,
 LoRA layer3+4 r=32 (config recommandee), Full LoRA r=8 avec BN derivante (l'effet BN
@@ -43,12 +45,19 @@ TERRAINS = [("visible_1.00m", "Visible\n1.00 m"), ("visible_2.60m", "Visible\n2.
             ("ir_2.60m", "IR\n2.60 m"), ("ir_4.20m", "IR\n4.20 m")]
 N_CONQ = 3
 
-DEFAULT_CONFIGS = [
+# Jeu "gain" : ou le gain se produit dans la representation (config recommandee vs FT).
+MAIN_CONFIGS = [
     ("pretrained", "Pre-trained", "#898781"),
     ("ft_34_anchor", "FT layer3+4", "#2a78d6"),
     ("lora_34_r32_anchor_bnfrozen", "LoRA layer3+4 r=32", "#eb6834"),
+]
+# Jeu "BN" : la paire equitable, meme config, seules les statistiques BN changent.
+BN_CONFIGS = [
+    ("pretrained", "Pre-trained", "#898781"),
+    ("full_lora_r8_anchor_bnfrozen", "Full LoRA r=8, BN frozen", "#eb6834"),
     ("full_lora_r8_anchor", "Full LoRA r=8, BN drifting", "#4a3aa7"),
 ]
+DEFAULT_CONFIGS = MAIN_CONFIGS
 INK, INK_2, GRID, AXIS = "#0b0b0b", "#52514e", "#e1e0d9", "#c3c2b7"
 
 
@@ -164,9 +173,16 @@ def main() -> None:
         print(f"configs absentes, ignorees : {missing}")
         configs = [c for c in configs if c[0] in data]
 
-    figure(data, configs, 0, "cos(probe, own mugshot)", FIG_DIR / "fig_embedding_gap.pdf", zero=False)
-    figure(data, configs, 1, "margin to best impostor", FIG_DIR / "fig_margin.pdf", zero=True)
-    summary(data, configs)
+    if args.configs:
+        figure(data, configs, 0, "cos(probe, own mugshot)", FIG_DIR / "fig_embedding_gap_custom.pdf", zero=False)
+        figure(data, configs, 1, "margin to best impostor", FIG_DIR / "fig_margin_custom.pdf", zero=True)
+        summary(data, configs)
+        return
+    for tag, cfgs in (("", MAIN_CONFIGS), ("_bn", BN_CONFIGS)):
+        cfgs = [c for c in cfgs if c[0] in data]
+        figure(data, cfgs, 0, "cos(probe, own mugshot)", FIG_DIR / f"fig_embedding_gap{tag}.pdf", zero=False)
+        figure(data, cfgs, 1, "margin to best impostor", FIG_DIR / f"fig_margin{tag}.pdf", zero=True)
+        summary(data, cfgs)
 
 
 if __name__ == "__main__":

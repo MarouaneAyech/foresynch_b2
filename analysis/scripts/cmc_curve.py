@@ -87,11 +87,10 @@ def main() -> None:
         ax.plot(ks, c, color=color, linewidth=2, linestyle=ls, zorder=3,
                 marker="o", markersize=4, markerfacecolor=color, markeredgecolor="white",
                 markeredgewidth=1.0)
-        ax.text(K_MAX + 0.25, c[-1], f"{c[-1]:.1f}", va="center", ha="left", fontsize=6.5, color=INK_2)
         print(f"{label:<22s}" + "".join(f"  {c[k-1]:5.1f}" for k in (1, 2, 3, 5, 10)))
 
     ax.set_xticks(ks)
-    ax.set_xlim(0.7, K_MAX + 1.6)
+    ax.set_xlim(0.7, K_MAX + 0.3)
     ax.set_xlabel("Rank k", color=INK_2)
     ax.set_ylabel(f"CMC (%) -- {args.terrain.replace('_', ' ')}", color=INK_2)
     ax.tick_params(axis="both", length=0, colors=INK_2)

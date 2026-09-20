@@ -47,9 +47,9 @@ l'analyse spectrale comme cœur du statut Full Paper, et l'ensemble des Phases 0
 | 0 | Réparations de compilation + branchement de `exp_results.tex` | **à faire** | ⛔ |
 | 1 | Analyse spectrale | **faite** (1.1–1.4) | — |
 | 1bis | Correction BN, grille relancée, ablation de rang, runs de complétude | **faite** | — |
-| 2 | Exploitation des checkpoints : bootstrap, embeddings, CMC | à faire | cœur |
+| 2 | Exploitation des checkpoints : bootstrap, embeddings, CMC | **faite** (20/09) | cœur |
 | 3 | Contrôles : `fc-only` ✅, mesure mugshot, sans-ancrage (optionnel) | 3.1 faite | |
-| 4 | Restructuration et rédaction | Setup + Results faits ; le reste à faire | |
+| 4 | Restructuration et rédaction | Setup + Results + **Discussion** faits dans `exp_results.tex` ; intro/abstract/biblio/titre à faire | |
 | 5 | Finalisation et conformité | à faire | ⛔ |
 
 Ordre d'exécution recommandé : **0 → 2.3 → 2.2/2.1 → 3.1 → 4 → 5**. La Phase 0 d'abord parce
@@ -99,6 +99,10 @@ Supprimer `\lipsum[1-2]` et `\lipsum[3-6]` (Section 3.1). Vérifier : `grep -n l
   `\input{exp_results.tex}`.
 - Supprimer les anciens tableaux/figures devenus redondants (l'ancienne table de grille,
   l'ancienne figure `ir 4.20 m` avec l'hybride, les anciens résultats LoRA dérive-BN).
+- **Supprimer aussi l'ancienne §6 Discussion** (`sec:discussion`, obsolète) : la nouvelle est
+  dans `exp_results.tex` avec le même label.
+- Copier `fig_spectrum.pdf` et `fig_stage_displacement.pdf` (Drive, `analysis/figures/`) dans
+  `paper/figures/` si on les inclut.
 - Vérifier que les labels référencés ailleurs (`tab:configs`, `sec:results`, …) existent encore.
 - `paper/figures/` contient `fig_full_lora_bn.pdf` et `fig_full_ft_vs_full_lora.pdf`
   (générées par `analysis/scripts/fig_headline.py`) — les chemins dans `exp_results.tex` sont
@@ -213,7 +217,11 @@ Décisions prises et documentées dans `resultats_exp.md` :
 
 ---
 
-# PHASE 2 — Exploitation des checkpoints ⭐ À FAIRE
+# PHASE 2 — Exploitation des checkpoints ✅ FAITE (20/09/2026)
+
+Résultats détaillés dans `resultats_exp.md`, section « Phase 2 ». Point clé : « r=32 > FT »
+n'est soutenu qu'au niveau identité sur ir 4.20 m ; en agrégat l'IC contient 0 — formulation
+du papier ajustée en conséquence. Discussion (§6) rédigée dans `exp_results.tex`.
 
 Aucun entraînement. Tous les checkpoints de la grille existent (BN gelées pour LoRA).
 
@@ -281,10 +289,10 @@ d'information — nuance utile pour la Discussion.
 Rang-5 et TPIR@FAR=1 % depuis les mêmes matrices. Seulement si la place le permet.
 
 **DoD 2 :**
-- [ ] `eval_checkpoint.py` reproduit le rank-1 des JSON à l'identique
-- [ ] `bootstrap_ci.csv` produit ; **0 p-value** dans `exp_results.tex`, remplacées par des IC
-- [ ] `fig_embedding_gap.pdf`, `fig_cmc_ir420.pdf` générées, même style que `fig_headline.py`
-- [ ] Constats consignés dans `resultats_exp.md`
+- [x] ~~`eval_checkpoint.py` reproduit le rank-1 des JSON à l'identique~~
+- [x] ~~`bootstrap_ci.csv` produit ; **0 p-value** dans `exp_results.tex`, remplacées par des IC~~
+- [x] ~~`fig_embedding_gap.pdf`, `fig_cmc_ir_420m.pdf` générées, même style que `fig_headline.py`~~
+- [x] ~~Constats consignés dans `resultats_exp.md`~~
 
 ---
 
@@ -444,7 +452,7 @@ et test, hyperparamètres non retunés par rang (explication candidate du recul 
 
 ## 4.8 Points ouverts dans `exp_results.tex` (à régler avant 5)
 
-- [ ] p-values Welch non documentées (§4.2, §4.3) → Phase 2.3
+- [x] ~~p-values Welch non documentées (§4.2, §4.3)~~ → remplacées par les IC bootstrap
 - [ ] Les deux chiffres dérive-BN cités sans table (layer4 −1.2, layer3+4 +58.7) → note de
       bas de page « same protocol, three seeds, not tabulated » ou petite table annexe
 - [ ] « both readings are found in practice » → citation ou adoucissement
