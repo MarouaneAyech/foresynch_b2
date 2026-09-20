@@ -1,4 +1,4 @@
-"""Registre des 7 scénarios de la grille scope x mécanisme.
+"""Registre des 8 scénarios de la grille scope x mécanisme.
 
 Remplace le bloc `if MODE == ... elif MODE == ...` du notebook d'origine, où le
 scénario était changé en commentant/décommentant une ligne à la main. Ici, chaque
@@ -86,6 +86,27 @@ def configure_lora_4(model: nn.Module, lora_r: int = 8, lora_alpha: int = 16, **
     return ScenarioResult(n_conv, n_fc)
 
 
+def configure_fc_only(model: nn.Module, **_) -> ScenarioResult:
+    """Baseline de controle (Phase 3.1 du plan) : seule la projection finale `fc`
+    (features conv aplaties 25088 -> embedding 512, 12.85M parametres) est
+    entrainee, avec la tete ArcFace. Tout le tronc convolutif reste gele, et la
+    BN1d finale `features` reste gelee comme dans tous les autres scenarios.
+
+    Repond a l'objection "et si tout le gain venait de fc ?" : toutes les
+    configurations de la grille adaptent fc (directement en FT, par adaptateur en
+    LoRA), et fc est l'etage au plus grand deplacement relatif en fine-tuning libre
+    (Phase 1.3, 22.9%). A lancer avec freeze_bn=True (meme lecture que LoRA : le
+    backbone gele doit l'etre aussi au sens de la fonction).
+
+    Attention : fc n'est PAS la tete ArcFace. La tete (512 x n_identites) est jetee
+    a l'inference ; fc produit l'embedding et reste dans le chemin d'inference.
+    """
+    _freeze_all(model)
+    for p in model.fc.parameters():
+        p.requires_grad = True
+    return ScenarioResult()
+
+
 def configure_hybrid(model: nn.Module, lora_r: int = 8, lora_alpha: int = 16, **_) -> ScenarioResult:
     _unfreeze_all(model)
     _freeze_prefixes(model, FROZEN_STEM)
@@ -123,5 +144,6 @@ SCENARIOS: dict[str, Callable[..., ScenarioResult]] = {
     "full_lora": configure_full_lora,
     "lora_34": configure_lora_34,
     "lora_4": configure_lora_4,
+    "fc_only": configure_fc_only,
     "hybrid": configure_hybrid,
 }

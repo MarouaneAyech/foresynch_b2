@@ -1,711 +1,507 @@
 # Plan d'exécution — Transformer le papier B1 en Full Paper ICAART 2027
 
+> **Version 2 — 19/09/2026.** Révision complète après l'exécution des Phases −1, 1 et de la
+> correction BatchNorm. La version 1 (début septembre) reposait sur quatre hypothèses que les
+> mesures ont renversées ; ce document les remplace. Voir « Journal des révisions » ci-dessous.
+>
 > **Destinataire : Claude Code.** Ce document est un plan d'exécution. Suis les phases dans l'ordre.
 > Chaque phase a une **Definition of Done (DoD)** vérifiable. Ne passe pas à la phase suivante
 > tant que la DoD n'est pas satisfaite. Les phases marquées ⛔ sont bloquantes.
 >
-> **Contexte.** Le papier existe (`Example.tex`, template SCITEPRESS) et rapporte une étude
+> **Contexte.** Le papier (`paper/Example.tex`, template SCITEPRESS) rapporte une étude
 > scope × mécanisme (fine-tuning vs LoRA) pour la reconnaissance faciale forensique sur SCface.
-> Il est actuellement calibré pour un Short Paper. L'objectif est de le faire classer **Full Paper**
-> (12 pages) **sans refaire l'expérimentation principale** : on exploite les checkpoints et les
-> scores déjà produits.
+> Les sections Experimental Setup et Results ont été réécrites dans `paper/exp_results.tex`
+> sur la base de la grille corrigée (BN gelées) — **ce fichier n'est pas encore branché dans
+> `Example.tex`**. Le code d'expérimentation est modularisé dans `src/forensic_fr/` et piloté
+> par `notebooks/colab_runner.ipynb` ; les résultats consolidés sont dans
+> `analysis/outputs/resultats_exp.md` (source unique, gitignorée).
 >
 > **Cible de soumission.** ICAART 2027, deuxième tour, **22 octobre 2026**, catégorie
 > **Regular Paper** (surtout pas Position Paper : celui-ci est plafonné à Short d'office).
+> Ambition : Full Paper solide, conférence classe B au minimum.
+
+---
+
+## Journal des révisions (v1 → v2)
+
+| Hypothèse de la v1 | Ce que les mesures ont montré | Conséquence sur le plan |
+|---|---|---|
+| LoRA échoue sur l'infrarouge parce que l'adaptation requise est de rang élevé | **Faux.** LoRA échouait parce que les statistiques BatchNorm dérivaient pendant l'entraînement (backbone gelé en paramètres, pas en fonction). Une fois BN gelées, LoRA égale FT dès r=8 et le dépasse à r=32 sur tous les terrains | Le récit central du papier est inversé : ce n'est plus « pourquoi LoRA échoue » mais « à quelle condition et à quel rang LoRA égale le fine-tuning, et pourquoi » |
+| L'hybride (FT l3+4 + LoRA l1+2) est le meilleur résultat, à réhabiliter comme 4ᵉ contribution (§4.1) | **Caduc.** `LoRA layer3+4 r=32` bat FT et l'hybride sur les six terrains avec 4.14 M paramètres. Aucune combinaison ne fait mieux | §4.1 inversée : « un seul mécanisme, un seul scope, un seul hyperparamètre suffit » |
+| Contradiction avec PETALface (ils trouvent PEFT > FT, nous FT > PEFT) à expliquer (§4.3) | **Dissoute.** Nos résultats corrigés vont dans le même sens que PETALface. La « contradiction » était un artefact BN | §4.3 devient une *convergence*, avec un argument inédit : une partie des désaccords de la littérature PEFT-vs-FT sur backbones convolutifs pourrait avoir la même origine |
+| Phase 2.2 : « LoRA referme l'écart d'embedding sur le visible mais pas sur l'IR » | **Faux à r=32.** | Phase 2.2 conservée, mais avec une question différente : *où* le gain se produit dans l'espace d'embedding, et ce que la dérive BN y fait |
+| Titre proposé : « When Does Low-Rank Adaptation Fail? » | Elle n'échoue pas | Titre à reformuler (§4.4) |
+| Aucun checkpoint disponible → repli possible | Checkpoints régénérés pour toute la grille, 3 seeds, BN gelées | Section « Repli » réécrite : la Phase 1 ne peut plus échouer, elle est faite |
+
+**Ce qui n'a pas changé** : la structure hypothèses → mesure → explication, la décomposition
+terrains conquis / challenge, le protocole unifié (AdamW, 20 époques, ancrage 50/50, 3 seeds),
+l'analyse spectrale comme cœur du statut Full Paper, et l'ensemble des Phases 0 et 5.
 
 ---
 
 ## Table des phases
 
-| Phase | Objet | Durée | Bloquant |
+| Phase | Objet | État au 19/09 | Bloquant |
 |---|---|---|---|
-| −1 | Reconnaissance du dépôt + gate de faisabilité | 0,5 j | ⛔ |
-| 0 | Réparations de compilation | 1 j | ⛔ |
-| 1 | Analyse spectrale des checkpoints | 4 j | cœur |
-| 2 | Exploitation des scores existants | 3 j | cœur |
-| 3 | Deux expériences de contrôle | 4 j | |
-| 4 | Restructuration et rédaction | 12 j | |
-| 5 | Finalisation et conformité | 5 j | ⛔ |
+| −1 | Reconnaissance + gate | **faite** | — |
+| 0 | Réparations de compilation + branchement de `exp_results.tex` | **à faire** | ⛔ |
+| 1 | Analyse spectrale | **faite** (1.1–1.4) | — |
+| 1bis | Correction BN, grille relancée, ablation de rang, runs de complétude | **faite** | — |
+| 2 | Exploitation des checkpoints : bootstrap, embeddings, CMC | à faire | cœur |
+| 3 | Contrôles : `fc-only` (indispensable), mesure mugshot, sans-ancrage (optionnel) | à faire | |
+| 4 | Restructuration et rédaction | Setup + Results faits ; le reste à faire | |
+| 5 | Finalisation et conformité | à faire | ⛔ |
+
+Ordre d'exécution recommandé : **0 → 2.3 → 2.2/2.1 → 3.1 → 4 → 5**. La Phase 0 d'abord parce
+que tant que le papier ne compile pas, ni le nombre de pages ni le comptage de caractères ne
+sont connus — et ce sont les deux critères de la Phase 4.
 
 ---
 
-# PHASE −1 — Reconnaissance et gate de faisabilité ⛔
+# PHASE −1 — Reconnaissance et gate ✅ FAITE
 
-**Ne produis aucun code d'analyse avant d'avoir terminé cette phase.**
+Verdict initial : **GO PARTIEL** — aucun checkpoint n'avait jamais été sauvegardé
+(`piepline_version_stable.ipynb` créait `checkpoints/` mais n'y écrivait rien), mais le code
+était fonctionnel et un run coûte ~20 min. Conséquences :
 
-## −1.1 Inventaire
-
-Explore le dépôt et produis `AUDIT.md` répondant précisément à :
-
-1. **Checkpoints.** Où sont les poids sauvegardés ? Liste tous les fichiers `.pt` / `.pth` / `.ckpt`
-   avec leur chemin, leur taille et la configuration à laquelle ils correspondent
-   (mécanisme × scope × seed). Attendu : FT layer4, FT layer3+4, FT full, LoRA layer4,
-   LoRA layer3+4 (r=8), LoRA layer3+4 (r=16), LoRA full, Hybrid — × 3 seeds.
-2. **Checkpoint pré-entraîné.** Où est le IResNet-50 ArcFace/MS1MV3 d'origine (`W_0`) ?
-3. **Scores d'évaluation.** Les matrices de similarité probe×gallery ou les listes de
-   prédictions par terrain ont-elles été sauvegardées ? Sous quel format ?
-4. **Code d'entraînement.** Chemin du script d'entraînement, du builder de modèle,
-   de l'implémentation LoRA (comment les adaptateurs sont injectés dans les conv 3×3).
-5. **Données.** Chemin de SCface, partition train/test, nombre exact d'identités
-   d'entraînement et de test, méthode d'alignement, résolution d'entrée, taille de batch.
-6. **Environnement.** Version PyTorch, GPU disponible, temps mesuré d'un run complet.
-
-## −1.2 Gate de décision
-
-Écris en tête de `AUDIT.md` un verdict explicite :
-
-- **GO COMPLET** — checkpoints FT layer3+4, FT full, LoRA layer3+4 et le pré-entraîné existent.
-  → Exécute tout le plan.
-- **GO PARTIEL** — les checkpoints manquent mais le code d'entraînement est fonctionnel et un
-  run coûte < 2 h. → Relance uniquement les 3 configs nécessaires (FT l3+4, Full FT, LoRA l3+4,
-  1 seed chacune suffit pour l'analyse spectrale), puis exécute tout le plan.
-- **NO-GO** — ni checkpoints ni code réutilisable. → **Arrête-toi et signale-le.** Bascule sur le
-  plan de repli (voir « Repli » en fin de document) : Phases 0, 2, 4 seulement, cible Short Paper.
-
-## −1.3 Espace de travail
-
-Crée l'arborescence :
-
-```
-analysis/
-  scripts/          # scripts d'analyse
-  outputs/          # CSV, JSON de résultats
-  figures/          # PDF des figures pour LaTeX
-paper/              # copie de travail du .tex
-```
-
-Ne modifie jamais les sources originales en place : travaille sur une copie versionnée (branche git dédiée `full-paper`).
-
-**DoD −1 :** `AUDIT.md` existe, contient le verdict, et liste des chemins réels vérifiés (pas supposés).
+- `src/forensic_fr/` : package modulaire (config, data, models, training, evaluation),
+  `training/checkpoint.py` sauvegarde les poids à la fin de chaque run.
+- `training/grid.py` : grille unique (`GRID`), `build_plan(only, seeds, anchor, freeze_bn)`.
+- `notebooks/colab_runner.ipynb` : point d'entrée Colab (git pull, paramètres `#@param`, grille,
+  analyses).
+- Historique : un JSON par run (`exp1_{mode}_r{r}_seed{s}_{anchor}[_bnfrozen].json`) — l'ancien
+  fichier partagé par mode subissait une race condition Drive.
+- Dépôt public `MarouaneAyech/foresynch_b2` ; `paper/`, `old code/`, `analysis/outputs/`
+  gitignorés (manuscrit non anonymisé, résultats non publiés).
 
 ---
 
-# PHASE 0 — Réparations de compilation ⛔
+# PHASE 0 — Réparations de compilation ⛔ À FAIRE
 
-Le papier **ne compile pas actuellement**. Rien d'autre ne compte tant que ce n'est pas réglé.
+Le papier **ne compile pas** et les sections révisées ne sont pas branchées. Rien d'autre ne
+compte tant que ce n'est pas réglé.
 
-## 0.1 Corrections du préambule
-
-Dans `Example.tex` :
+## 0.1 Préambule (`Example.tex`)
 
 | Action | Détail |
 |---|---|
-| Ajouter | `\usepackage{siunitx}` **avant** `\usepackage{SCITEPRESS}` |
-| Supprimer | `\usepackage{lipsum}` (ligne ~21) et son commentaire français |
-| Supprimer | le `\usepackage{subcaption}` en double (il apparaît lignes ~4 et ~26 ; n'en garder qu'un) |
+| Ajouter | `\usepackage{siunitx}` **avant** `\usepackage{SCITEPRESS}` — `\SI` est utilisé partout dans `exp_results.tex` |
+| Supprimer | `\usepackage{lipsum}` et son commentaire français |
+| Supprimer | le `\usepackage{subcaption}` en double |
 
-## 0.2 Suppression du faux texte ⛔ CRITIQUE
+## 0.2 Faux texte ⛔ CRITIQUE
 
-Section 3.1, autour de `\input{fig_pipeline.tex}` :
+Supprimer `\lipsum[1-2]` et `\lipsum[3-6]` (Section 3.1). Vérifier : `grep -n lipsum Example.tex` → 0.
 
-```latex
-% À SUPPRIMER intégralement :
-\lipsum[1-2]
-\lipsum[3-6]
-```
+## 0.3 Brancher `exp_results.tex` ⛔ NOUVEAU
 
-Vérifie ensuite par `grep -n lipsum Example.tex` → doit retourner 0 résultat.
+- Remplacer les anciennes sections 4 (Experimental Setup) et 5 (Results) de `Example.tex` par
+  `\input{exp_results.tex}`.
+- Supprimer les anciens tableaux/figures devenus redondants (l'ancienne table de grille,
+  l'ancienne figure `ir 4.20 m` avec l'hybride, les anciens résultats LoRA dérive-BN).
+- Vérifier que les labels référencés ailleurs (`tab:configs`, `sec:results`, …) existent encore.
+- `paper/figures/` contient `fig_full_lora_bn.pdf` et `fig_full_ft_vs_full_lora.pdf`
+  (générées par `analysis/scripts/fig_headline.py`) — les chemins dans `exp_results.tex` sont
+  relatifs à `paper/`.
 
-## 0.3 Unité invalide
+## 0.4 Unité invalide
 
-Remplace `\SI{43.6}{\mega\nothing}` (caption de la table des configurations) par `43.6\,M`.
-`\nothing` n'existe plus en siunitx v3.
+`\SI{43.6}{\mega\nothing}` → `43.6\,M` (si encore présent dans les parties non réécrites).
 
-## 0.4 Insérer la figure LoRA orpheline
+## 0.5 Figure LoRA orpheline
 
-`fig_lora_block.tex` existe mais n'est jamais inclus. C'est actuellement la **seule** description
-de la manière dont LoRA est injecté dans les convolutions 3×3 — sans elle, le mécanisme central
-du papier n'est décrit nulle part.
+`fig_lora_block.tex` n'est jamais inclus. L'insérer dans la Section 3.2 après le paragraphe
+« Low-rank adaptation », avec 3–4 phrases : `A` = conv 1×1 (in→r), `B` = conv 3×3 (r→out),
+échelle α/r, `B` initialisé à zéro. **Ajouter la remarque** (résultat de la Phase 1.1) : le ΔW
+aplati d'un adaptateur conv n'est pas plafonné à r mais à ~r·k² = 9r, parce que `B` porte le
+noyau spatial ; seul l'adaptateur `fc` est plafonné à r exactement.
 
-Insère `\input{fig_lora_block.tex}` dans la Section 3.2, juste après le paragraphe
-« Low-rank adaptation », et ajoute dans le corps du texte 3 à 4 phrases décrivant la
-paramétrisation : `A` réduit les canaux via une conv 1×1 au rang `r`, `B` ré-étend via le
-noyau spatial 3×3 d'origine, sortie mise à l'échelle par `α/r`, `B` initialisé à zéro.
-Référence la figure avec `Fig.~\ref{fig:lora_block}`.
+## 0.6 Sections 5.1 et 6.1 de l'ancienne version — ⚠️ REMPLACÉES, PAS CORRIGÉES
 
-## 0.5 Erreur factuelle interne ⛔
-
-Section 5.1, la phrase affirmant que LoRA layer4 a « a similar footprint on that stage » est
-**fausse** : 0,50 M contre 26,02 M, soit un facteur 52, contredit par la table des configurations
-du papier lui-même.
-
-Remplace par une formulation exacte, du type :
-> even though this stage carries the largest share of the backbone's parameters, the rank-8
-> adapters can only reach 0.50M trainable weights against 26.02M for direct fine-tuning.
-
-## 0.6 Contradiction figure/texte ⛔
-
-Le texte affirme que LoRA layer4 « does not adapt at all (−1.2, no gain over the un-adapted
-model) ». Or la figure du terrain `ir 4.20 m` place LoRA l4 à **49,7 %** contre une baseline de
-**35,6 %**, soit +14,1 points sur la condition la plus dure.
-
-LoRA layer4 n'est pas inerte : il **redistribue** (il gagne sur l'IR long et perd ailleurs), et
-ΣΔ ≈ 0 masque cette redistribution.
-
-Reformule le passage pour dire exactement cela, et ajoute une phrase d'interprétation : sous
-contrainte de capacité, l'adaptateur ne peut satisfaire qu'une partie des terrains et sacrifie
-les conditions saturées. C'est un **résultat intéressant**, pas une erreur à cacher.
+Les points 0.5/0.6 de la v1 (« similar footprint », « does not adapt at all ») corrigeaient des
+phrases qui décrivaient des résultats **faux** (dérive BN). Ne pas les corriger : ces passages
+disparaissent avec le branchement de `exp_results.tex` (0.3). La Discussion (§6) devra être
+réécrite en Phase 4, pas rafistolée.
 
 ## 0.7 Abstract
 
-Il fait actuellement **247 mots**, la limite SCITEPRESS est de **200**. Réduis-le en coupant
-la redondance entre la 2ᵉ et la 3ᵉ « finding ». Vérifie par script.
+247 mots → ≤ 200. À réécrire entièrement de toute façon (Phase 4) : le résumé actuel affirme
+que LoRA échoue.
 
 ## 0.8 Nettoyage
 
-- Supprime tous les commentaires en français dans `Example.tex`, `fig_pipeline.tex`,
-  `fig_lora_block.tex`, `references.bib` (dont l'en-tête « Papier B1 CoopIS 2026 » —
-  il ne doit subsister aucune trace d'un autre lieu de soumission).
-- Supprime les grands blocs de commentaires résiduels du template SCITEPRESS (lignes ~850–1080).
+Commentaires français, en-tête « Papier B1 CoopIS 2026 » dans `references.bib`, blocs
+résiduels du template SCITEPRESS.
 
 **DoD 0 :**
-- [ ] `pdflatex` + `bibtex` + `pdflatex` ×2 s'exécutent avec **0 erreur**
+- [ ] `pdflatex` + `bibtex` + `pdflatex` ×2 → **0 erreur**
 - [ ] `grep -c lipsum Example.tex` → `0`
-- [ ] Abstract ≤ 200 mots (script de comptage)
-- [ ] Aucune référence non résolue (`??`) dans le PDF
-- [ ] Le PDF contient les deux figures TikZ (pipeline **et** bloc LoRA)
+- [ ] `exp_results.tex` inclus, anciennes sections 4–5 retirées, 0 référence `??`
+- [ ] Les deux figures TikZ (pipeline, bloc LoRA) et les deux figures PDF de la §4.1 apparaissent
+- [ ] Nombre de pages et comptage de caractères hors espaces notés dans `resultats_exp.md`
 
 ---
 
-# PHASE 1 — Analyse spectrale des checkpoints ⭐ LE CŒUR
+# PHASE 1 — Analyse spectrale ✅ FAITE (1.1–1.4)
 
-**C'est cette phase qui fait basculer le papier de Short à Full.** Aucun entraînement :
-uniquement du chargement de poids et de l'algèbre linéaire.
+Scripts : `analysis/scripts/spectral_analysis.py` (1.1), `spectrum_figure.py` (1.2),
+`stage_displacement.py` (1.3), `bn_drift_check.py` (1.4). Résultats détaillés dans
+`resultats_exp.md`. Ce que les chiffres disent :
 
-**Justification.** Le papier affirme actuellement que LoRA échoue sur l'infrarouge « parce que
-l'adaptation requise est de rang élevé ». C'est une **conjecture non mesurée**. Les poids
-nécessaires pour la mesurer sont déjà sur disque.
+**1.1 Rang effectif** (médian par étage, checkpoints BN gelées) :
 
-## 1.1 Rang effectif de ΔW
+| Config | layer3 | layer4 | fc | ratio réel/nominal (layer4) |
+|---|---|---|---|---|
+| FT layer3+4 | 181.6 | 368.4 | 117.4 | — |
+| LoRA l3+4 r=8 | 34.6 | 32.4 | 7.3 | ×4.05 |
+| LoRA l3+4 r=16 | 60.2 | 59.3 | 13.5 | ×3.71 |
+| LoRA l3+4 r=32 | 91.6 | 97.7 | 20.2 | ×3.05 |
+| LoRA l3+4 r=64 | 120.3 | 159.4 | 25.2 | ×2.49 |
 
-Crée `analysis/scripts/spectral_analysis.py`.
+Le rendement marginal du rang s'effondre (×4.05 → ×2.49) : explication mécaniste du plateau
+puis du recul à r=64. Et LoRA **dépasse FT dès r=32 avec un rang effectif ~4× plus faible**
+(97.7 vs 368.4 sur layer4) : il n'a pas besoin d'égaler le rang de FT pour égaler sa performance.
 
-Pour chaque couche convolutive et linéaire adaptée, pour chaque checkpoint fine-tuné :
+**1.2 Énergie capturée** (FT l3+4, layer4) : r=8 → 8.6 %, r=16 → 14.3 %, r=32 → 23.5 %,
+r=64 → 37.5 %. Même à r=64, plus de 60 % de l'énergie de la mise à jour FT reste hors de
+portée — et pourtant la performance est déjà atteinte à r=32.
 
-```python
-import numpy as np, torch
+**1.3 Déplacement par étage** (Full FT) : stem 1.3 % → layer1 6.8 % → layer2 8.8 % →
+layer3 14.6 % → layer4 20.5 % → fc 22.9 %. Gradient croissant régulier, pas un escalier ;
+layer3+4 = 3.1× les étages bas. **H1 confirmée structurellement.** Note : `fc` est l'étage qui
+bouge le plus en proportion — c'est ce qui rend la baseline `fc-only` (3.1) indispensable.
 
-def delta_spectrum(W0: torch.Tensor, Wft: torch.Tensor):
-    """W: (C_out, C_in, kh, kw) pour une conv, (d_out, d_in) pour fc."""
-    dW = (Wft - W0).reshape(W0.shape[0], -1).float().cpu().numpy()
-    s = np.linalg.svd(dW, compute_uv=False)
-    s = s[s > 0]
-    energy = s**2
-    p = energy / energy.sum()
-    erank = float(np.exp(-(p * np.log(p + 1e-12)).sum()))   # Roy & Vetterli
-    cum = np.cumsum(energy) / energy.sum()
-    r90 = int(np.searchsorted(cum, 0.90) + 1)
-    r99 = int(np.searchsorted(cum, 0.99) + 1)
-    return dict(
-        max_rank=int(min(dW.shape)),
-        erank=erank, r90=r90, r99=r99,
-        rel_norm=float(np.linalg.norm(dW) / np.linalg.norm(
-            W0.reshape(W0.shape[0], -1).float().cpu().numpy())),
-        spectrum=s.tolist(),
-    )
-```
+**1.4 Contrôle BN** : dérive significative détectée sur tous les checkpoints LoRA d'origine →
+a déclenché la Phase 1bis. C'est **le** résultat qui a changé le papier.
 
-**Checkpoints à traiter :** `FT layer3+4` (prioritaire), `Full FT`, et pour comparaison
-`LoRA layer3+4` (reconstruis son ΔW effectif par `(α/r)·B·A` avant de le comparer).
-
-**Sorties :**
-- `analysis/outputs/spectral_per_layer.csv` — colonnes :
-  `checkpoint, seed, layer_name, stage, max_rank, erank, r90, r99, rel_norm`
-- `analysis/outputs/spectra/` — un `.npy` de valeurs singulières par couche
-
-**Agrégation demandée :** `erank` médian par étage (layer3, layer4, fc), moyenné sur les seeds.
-
-## 1.2 Figure « spectres de valeurs singulières »
-
-`analysis/figures/fig_spectrum.pdf` — valeurs singulières normalisées (s_i / s_1) en échelle log,
-axe x = indice, une courbe par étage (layer3, layer4, fc) pour le FT layer3+4.
-
-**Trace une ligne verticale à r = 8 et r = 16** (les rangs LoRA testés) pour rendre visible
-d'un coup d'œil la fraction d'énergie que l'adaptateur ne peut pas capturer.
-
-Annote sur la figure : « LoRA r=8 captures only X % of the fine-tuning update energy ».
-Calcule X réellement, ne l'invente pas.
-
-## 1.3 Profil de déplacement par étage — valide H1
-
-Sur le checkpoint **Full FT** uniquement, calcule pour chaque étage
-(stem, layer1, layer2, layer3, layer4, fc) :
-
-```
-rel_displacement(stage) = ||W_ft - W_0||_F / ||W_0||_F   # agrégé sur les paramètres de l'étage
-```
-
-**Sortie :** `analysis/figures/fig_stage_displacement.pdf`, diagramme en barres.
-
-**Lecture attendue :** si le fine-tuning complet, laissé libre d'adapter tout le réseau,
-concentre spontanément son déplacement sur layer3+4, alors H1 cesse d'être une observation
-empirique et devient une **explication structurelle**. C'est un résultat fort pour ~20 lignes
-de code. Si le profil est plat, dis-le honnêtement : c'est aussi une information.
-
-## 1.4 Contrôle BatchNorm ⛔ OBLIGATOIRE
-
-Compare les buffers `running_mean` et `running_var` des checkpoints **LoRA** à ceux du
-pré-entraîné.
-
-```python
-drift = (bn_lora.running_mean - bn_pre.running_mean).norm() / bn_pre.running_mean.norm()
-```
-
-**Enjeu.** Si les statistiques BN se mettent à jour pendant l'entraînement LoRA, le backbone
-n'est pas réellement « gelé », la comparaison est confondue, et — l'infrarouge ayant des
-statistiques d'image radicalement différentes — cela pourrait constituer une **explication
-alternative à tout l'effet H3**. Un relecteur compétent posera la question.
-
-**Deux issues :**
-- Dérive négligeable (< 1 %) → ajoute en Section 3.1 : *« the BN running statistics are kept
-  frozen in all LoRA configurations »*. Le confondant disparaît en une phrase.
-- Dérive significative → déclare-le, et déclenche l'expérience de contrôle 3.2.
-
-**Sortie :** `analysis/outputs/bn_drift.csv`.
-
-## 1.5 Directions intruses — BONUS, seulement si 1.1–1.4 sont terminés
-
-Réplique l'analyse de Shuttleworth et al. en convolutionnel : pour les top-k vecteurs singuliers
-gauches de `W_adapted`, calcule le cosinus maximal avec le sous-espace de tête de `W_0`.
-Une direction « intruse » est une direction de tête du modèle adapté qui n'a aucun correspondant
-dans le pré-entraîné.
-
-Compare FT vs LoRA. **Ne dépasse pas 1 journée dessus.** Si ça résiste, abandonne : les points
-1.1 à 1.4 suffisent.
-
-**DoD 1 :**
-- [ ] `spectral_per_layer.csv` rempli pour au moins FT l3+4 et Full FT
-- [ ] `erank` médian de layer3 et layer4 connu et comparé numériquement à r=8 et r=16
-- [ ] `fig_spectrum.pdf` et `fig_stage_displacement.pdf` générés
-- [ ] `bn_drift.csv` produit et interprété
-- [ ] Un fichier `analysis/outputs/FINDINGS_PHASE1.md` résumant en 10 lignes ce que les chiffres disent réellement — **y compris s'ils contredisent l'hypothèse du papier**
-
-> ⚠️ **Honnêteté scientifique.** Si le rang effectif mesuré s'avère *faible* (proche de 8),
-> l'explication actuelle du papier est fausse et il faut la réécrire, pas forcer les chiffres.
-> Un résultat qui infirme une hypothèse posée a priori se rapporte tel quel — c'est
-> précisément ce que la structure H1/H2/H3 du papier permet de faire proprement.
+**1.5 Directions intruses** : abandonné. Les points 1.1–1.4 suffisent ; le temps est mieux
+investi en Phase 2.
 
 ---
 
-# PHASE 2 — Exploitation des scores existants
+# PHASE 1bis — Correction BN et grille finale ✅ FAITE
 
-Toujours aucun entraînement : inférence seule, ou réutilisation des matrices de scores.
+Non prévue en v1. Déclenchée par 1.4.
 
-## 2.1 Courbes CMC rang-1 → rang-10
+**Le piège.** `requires_grad=False` gèle les paramètres affines γ, β d'une BatchNorm mais pas
+ses buffers `running_mean`/`running_var`, mis à jour par moyenne mobile à chaque forward en
+mode `.train()`. Un backbone « gelé » au sens des paramètres continue donc de changer au sens
+de la fonction. Correctif : `freeze_all_batchnorm()` (`.eval()` sur chaque BN après chaque
+`model.train()`), option `freeze_bn` de `RunConfig`, suffixe `_bnfrozen` sur les fichiers.
 
-Depuis les matrices de similarité, trace la CMC sur le terrain `ir 4.20 m` pour les 5 méthodes
-(Base, FT l3+4, Full FT, LoRA l3+4, Hybrid).
+**Grille finale** (3 seeds mesurés, ± par terrain partout, écart-type de population) :
 
-**Sortie :** `analysis/figures/fig_cmc_ir420.pdf`.
+| Config | Params | ir 4.20 m | ΣΔ |
+|---|---|---|---|
+| FT layer4 | 26.0 M | 52.5±4.5 | +39.2±6.9 |
+| FT layer3+4 | 42.3 M | 79.7±2.4 | +90.2±5.9 |
+| Full FT | 43.6 M | 80.2±6.5 | +87.8±8.6 |
+| LoRA layer4 r=8 | 0.50 M | 50.9±6.8 | +46.0±12.0 (dérive BN : −1.2) |
+| LoRA l3+4 r=8 | 1.07 M | 72.9±5.1 | +82.9±0.9 (dérive BN : +58.7) |
+| LoRA l3+4 r=16 | 2.09 M | 80.8±0.8 | +93.9±1.8 |
+| **LoRA l3+4 r=32** | **4.14 M** | **87.6±5.5** | **+99.9±3.9** |
+| LoRA l3+4 r=64 | 8.22 M | 81.9±3.5 | +93.2±3.5 |
+| Full LoRA r=8 | 1.18 M | 75.7±3.9 | +90.0±6.0 (dérive BN : +53.9±10.1, par terrain mesuré) |
 
-**Intérêt :** si LoRA rattrape au rang 5 mais pas au rang 1, cela signifie qu'il préserve
-l'information d'identité mais dégrade le classement — nuance qualitative absente du papier.
+Décisions prises et documentées dans `resultats_exp.md` :
+- r=64 fixé **à l'avance** comme dernier point de l'ablation (pas après coup).
+- Hybride abandonné : plus aucun terrain où FT garde un avantage mesurable.
+- Question BN tranchée une fois, à pleine portée, 3 seeds × 2 bras par terrain ; corroborée en
+  ΣΔ aux deux autres portées. `lora_34 r=8` dérive-BN volontairement non relancé.
+- Reproductibilité : `full_lora` dérive-BN, `full_ft` et `ft_34` relancés reproduisent le
+  brouillon **à la décimale** (pipeline déterministe par seed).
+
+---
+
+# PHASE 2 — Exploitation des checkpoints ⭐ À FAIRE
+
+Aucun entraînement. Tous les checkpoints de la grille existent (BN gelées pour LoRA).
+
+## 2.0 Prérequis : `analysis/scripts/eval_checkpoint.py`
+
+Le trainer ne sauvegarde ni embeddings ni matrices de similarité — seulement le rank-1 par
+terrain. Écrire un script qui, pour un checkpoint donné (réinjection LoRA via
+`load_checkpoint_model` de `spectral_analysis.py`), produit dans `analysis/outputs/eval/` :
+
+- `embeddings_{run}.npz` : embeddings L2-normalisés galerie + probes, avec identité et terrain ;
+- `scores_{run}.npz` : matrice cosinus probe × galerie par terrain ;
+- `correct_{run}.csv` : vecteur correct/incorrect par probe (identité, terrain, rang de la
+  bonne identité).
+
+Vérification : le rank-1 recalculé doit être **identique** au `test` de la dernière époque du
+JSON d'historique (même checkpoint = époque 20). Le script sert aussi de secours si un JSON
+est perdu.
+
+Checkpoints à traiter (1 seed chacun suffit pour 2.1/2.2, les 3 seeds pour 2.3) :
+pré-entraîné, FT l3+4, Full FT, LoRA l3+4 r=8, **LoRA l3+4 r=32**, Full LoRA r=8, et
+Full LoRA r=8 dérive-BN (pour montrer l'effet BN dans l'espace d'embedding).
+
+## 2.3 Statistiques robustes — PRIORITÉ 1 de la phase ⛔
+
+`exp_results.tex` contient encore des affirmations « Welch, p<0.01 », « not significant at the
+5 % level » **non documentées** (aucun script, aucun test nommé précisément). Sur 3 seeds,
+ces tests n'ont de toute façon pas de puissance. Remplacer par un **bootstrap au niveau
+identité** (30 identités de test, 10 000 rééchantillonnages) :
+
+- IC 95 % sur le rank-1 de chaque config par terrain ;
+- IC 95 % sur la **différence appariée** LoRA r=32 − FT l3+4, LoRA r=32 − Full FT,
+  Full LoRA − Full FT, BN gelées − BN dérivante (mêmes identités rééchantillonnées des deux côtés) ;
+- taille d'effet (Cohen's d apparié).
+
+**Rédaction :** ne jamais argumenter une *équivalence* par l'absence de significativité. Dire ce
+que l'IC de la différence exclut ou n'exclut pas. Retirer toutes les p-values de `exp_results.tex`.
+
+**Sortie :** `analysis/outputs/bootstrap_ci.csv` + une figure des IC (forest plot) sur
+`ir 4.20 m`.
 
 ## 2.2 Écart de domaine dans l'espace d'embedding ⭐
 
-Pour chaque identité de test, calcule le cosinus entre l'embedding de son mugshot (galerie) et
-l'embedding de ses images de surveillance, décomposé par modalité et distance, pour :
-pré-entraîné / FT l3+4 / LoRA l3+4.
+Pour chaque identité de test : cosinus entre l'embedding mugshot (galerie) et ses probes,
+par terrain, pour pré-entraîné / FT l3+4 / LoRA r=32 / Full LoRA dérive-BN.
 
-**Sortie :** `analysis/figures/fig_embedding_gap.pdf` — boxplots ou violons,
-axe x = les 6 terrains, une couleur par méthode.
+**Question révisée** (la v1 prédisait un échec sur l'IR qui n'existe plus) : montrer *où* le
+gain se produit — l'écart intra-identité se referme-t-il uniformément ou surtout sur l'IR long ?
+— et ce que la dérive BN fait : on s'attend à ce qu'elle éloigne les probes des mugshots
+**y compris sur les terrains conquis** (cohérent avec la régression sous baseline mesurée).
+C'est la version « dans la représentation » du résultat BN, plus démonstrative qu'un rank-1.
 
-**Résultat attendu et très démonstratif :** LoRA referme l'écart sur le visible mais **pas** sur
-l'infrarouge. Tu montres alors la défaillance **dans la représentation elle-même**, et pas
-seulement dans la métrique finale. C'est ce qui répond à la question de review
-« Improve critical discussion? ».
+**Sortie :** `analysis/figures/fig_embedding_gap.pdf`, boxplots, 6 terrains, une couleur par
+config (palette de `fig_headline.py`).
 
-## 2.3 Statistiques robustes — répare la faiblesse n=3 ⛔
+## 2.1 Courbes CMC rang-1 → rang-10
 
-Abandonne les p-values calculées sur 3 seeds (le papier en rapporte trois : 0,54 / 0,05 / 0,03,
-sans nommer le test, sans correction de comparaisons multiples). Remplace par un **bootstrap au
-niveau identité**, qui exploite les 30 identités de test plutôt que les 3 seeds :
+Terrain `ir 4.20 m`, configs : Base, FT l3+4, Full FT, LoRA r=8, LoRA r=32, Full LoRA.
+Intérêt : si FT rattrape LoRA r=32 au rang 5, la différence est de classement, pas
+d'information — nuance utile pour la Discussion.
 
-```python
-# Pour chaque méthode : vecteur binaire correct/incorrect par identité et par terrain
-# 10 000 rééchantillonnages avec remise des 30 identités
-# -> IC 95 % sur le rank-1 de chaque méthode
-# -> IC 95 % sur la DIFFÉRENCE APPARIÉE FT - LoRA (rééchantillonner les mêmes identités
-#    pour les deux méthodes : c'est ce qui rend le test puissant malgré n=30)
-```
+**Sortie :** `analysis/figures/fig_cmc_ir420.pdf`.
 
-Rapporte aussi une taille d'effet (Cohen's d apparié).
+## 2.4 Métriques complémentaires (optionnel)
 
-**Point important de rédaction :** supprime l'usage actuel de « p = 0.05 » pour argumenter
-l'**équivalence** en H2. C'est une inversion logique (p = 0,05 est conventionnellement
-*significatif*, et l'absence de significativité ne démontre jamais l'équivalence). Remplace par
-l'IC de la différence, en disant explicitement ce qu'il exclut ou n'exclut pas.
-
-**Sortie :** `analysis/outputs/bootstrap_ci.csv`.
-
-## 2.4 Métriques complémentaires
-
-Depuis les mêmes matrices : rang-5 et TPIR@FAR = 1 %. Ajoute-les en colonnes de la table
-par terrain.
+Rang-5 et TPIR@FAR=1 % depuis les mêmes matrices. Seulement si la place le permet.
 
 **DoD 2 :**
-- [ ] 3 figures générées (`fig_cmc_ir420`, `fig_embedding_gap`, + une visualisation des IC)
-- [ ] `bootstrap_ci.csv` produit
-- [ ] Toutes les p-values sur 3 seeds retirées du `.tex` et remplacées par des IC
+- [ ] `eval_checkpoint.py` reproduit le rank-1 des JSON à l'identique
+- [ ] `bootstrap_ci.csv` produit ; **0 p-value** dans `exp_results.tex`, remplacées par des IC
+- [ ] `fig_embedding_gap.pdf`, `fig_cmc_ir420.pdf` générées, même style que `fig_headline.py`
+- [ ] Constats consignés dans `resultats_exp.md`
 
 ---
 
-# PHASE 3 — Deux expériences de contrôle
+# PHASE 3 — Contrôles À FAIRE (réduits)
 
-Le strict minimum de calcul neuf. Budget : **6 runs, ~6 heures machine**.
+## 3.1 Baseline `fc-only` — 3 seeds ⛔ INDISPENSABLE
 
-## 3.1 Baseline `fc-only` — 3 seeds
+Fine-tuning de la seule projection `fc` + tête ArcFace, backbone gelé, **BN gelées**
+(même lecture que LoRA). Même protocole. Scénario à ajouter dans `training/scenarios.py`
+(`configure_fc_only`) et à `GRID`.
 
-Fine-tuning de la seule projection finale `fc` + tête ArcFace, backbone entièrement gelé.
-Même protocole unifié que tout le reste (AdamW, lr 1e-4, wd 0.1, 20 époques, batch 50/50).
+**Pourquoi c'est plus nécessaire qu'en v1 :** toutes les configs adaptent `fc`, et la Phase 1.3
+montre que `fc` est l'étage au plus grand déplacement relatif (22.9 %). L'objection « tout le
+gain vient de fc » est donc *renforcée* par nos propres mesures. Sans cette baseline, elle est
+imparable. Coût : 3 runs, ~1 h.
 
-**Pourquoi c'est indispensable.** Le papier adapte `fc` dans **toutes** ses configurations,
-y compris LoRA. Un relecteur objectera donc légitimement : *« et si tout le gain venait de fc ? »*.
-Sans cette baseline, l'objection est imparable. Avec elle, tu prouves que le gain provient des
-étages convolutifs.
+## 3.2 Seconde baseline PEFT — ✅ FAITE (branche BN)
 
-## 3.2 Seconde baseline PEFT — 3 seeds
+La v1 conditionnait 3.2 au résultat de 1.4 : dérive détectée → LoRA avec BN gelées. C'est
+devenu toute la grille. **BitFit reste optionnel** (scope layer3+4, biais + fc + tête) — à
+faire seulement si la Phase 4 révèle un manque sur l'axe « coût croissant »
+(`fc-only` → BitFit → LoRA → FT sélectif → FT complet).
 
-**Choix conditionné par le résultat de la Phase 1.4 :**
+## 3.3 Mesure passive mugshot (ex-4.3.2.B) — gratuit avec `eval_checkpoint.py`
 
-- **Si dérive BN détectée** → relance `LoRA layer3+4` avec BN explicitement gelées
-  (`bn.eval()` + `requires_grad=False` sur les affines). Élimine le confondant.
-- **Si pas de dérive BN** → implémente **BitFit** (entraînement des seuls termes de biais +
-  fc + tête), scope layer3+4. Coût : quelques dizaines de milliers de paramètres.
+Performance des modèles adaptés (FT et LoRA) sur les mugshots haute qualité tenus à l'écart :
+preuve directe de l'absence d'oubli catastrophique sous ancrage. Un tableau de 6 lignes.
 
-**Apport :** tu ne compares plus seulement deux mécanismes mais **cinq**, sur un axe de coût
-croissant : `fc-only` → `BitFit` → `LoRA` → `FT sélectif` → `FT complet`. C'est exactement ce
-que vise la question de review « Needs comparative evaluation? ».
+## 3.4 Contrôle sans ancrage — optionnel, 1 run
 
-## 3.3 Intégration
-
-Ajoute ces configurations à la table des configurations (avec leur budget de paramètres mesuré)
-et à la grille de résultats, et fais-les apparaître dans la figure du terrain `ir 4.20 m`.
-
-## 3.4 Contrôle optionnel — FT sans ancrage (voir 4.3.2.C)
-
-Un 7ᵉ run optionnel, **si le budget le permet** : `FT layer3+4` sans le mélange mugshot/dégradé
-(100 % dégradé), 1 seed. Objectif : tester si l'ancrage est bien ce qui empêche l'oubli
-catastrophique et l'instabilité observés chez PETALface en son absence — argument central de la
-Section 4.3/6.x. Coût ≈ 1h. Si le temps manque, ne bloque pas la Phase 3 pour ça : reporte-toi à
-la mesure passive de 4.3.2.B et assume l'hypothèse non démontrée dans le texte.
+`FT layer3+4` avec `ANCHOR=False` (100 % dégradé), 1 seed. Teste si l'ancrage est bien ce qui
+évite l'oubli et l'instabilité observés chez PETALface. Le code le supporte déjà
+(`build_train_loader(anchor=False)`). Ne pas y passer plus d'une demi-journée ; sinon, assumer
+l'hypothèse non démontrée dans le texte.
 
 **DoD 3 :**
-- [ ] 6 runs terminés, résultats par terrain enregistrés
-- [ ] Les 2 nouvelles configurations figurent dans les tables et figures
-- [ ] Leur ΣΔ est calculé avec la même convention que les autres
-- [ ] (Optionnel) Run de contrôle sans ancrage terminé et rapporté dans `FINDINGS_PHASE1.md`
-      ou un fichier dédié, qu'il confirme ou infirme l'hypothèse
+- [ ] `fc-only` × 3 seeds dans la grille, la table des configs et la table de portée
+- [ ] Tableau mugshot post-adaptation produit
+- [ ] (Optionnel) contrôle sans ancrage rapporté, qu'il confirme ou infirme
 
 ---
 
 # PHASE 4 — Restructuration et rédaction
 
-**Cible : ~42 000 caractères hors espaces** (le papier est actuellement à ~27 500 ; la fourchette
-Regular Paper est 10 000–50 000). Un papier à 27 500 caractères *ressemble* à un Short Paper de
-8 pages, et sera classé comme tel.
+**Cible : ~42 000 caractères hors espaces**, ≤ 12 pages. Script de comptage :
+`pdftotext paper.pdf - | tr -d '[:space:]' | wc -c`.
 
-Script de comptage à créer, à lancer après chaque session de rédaction :
+## 4.0 Le nouveau récit (à tenir d'un bout à l'autre)
 
-```bash
-# depuis le PDF compilé, hors espaces
-pdftotext paper.pdf - | tr -d '[:space:]' | wc -c
-```
+1. Un backbone convolutif « gelé » admet deux lectures ; la mauvaise fait échouer LoRA de 36
+   points et dégrade même les terrains déjà maîtrisés. **Contribution méthodologique.**
+2. Avec la bonne lecture, LoRA égale le fine-tuning complet dès r=8 (2.6 % des paramètres) et
+   le dépasse à r=32 sur les six terrains (8.7 %), y compris sur le plus dur.
+3. Le scope `layer3+4` n'est pas un choix : c'est là que le fine-tuning libre déplace ses poids
+   (Phase 1.3). Un seul mécanisme, un seul scope, un seul hyperparamètre suffisent — aucune
+   hybridation nécessaire.
+4. L'analyse spectrale explique le rang : le rendement du rang nominal s'effondre, LoRA n'a
+   besoin que d'un quart du rang effectif de FT, et l'ablation est en cloche, pas monotone.
+5. Convergence avec PETALface, et l'hypothèse que des désaccords de la littérature sur
+   PEFT-vs-FT en convolutionnel sont en partie des artefacts BN.
 
-## 4.1 Réhabiliter l'hybride — gratuit, et corrige un défaut grave ⛔
+## 4.1 Un seul mécanisme suffit (inverse de la v1) 
 
-**Constat actuel :** le papier écarte en une seule phrase son **meilleur résultat**.
-L'hybride obtient ΣΔ = +92,3 (le plus élevé du papier), 84,2 % sur `ir 4.20 m` (le plus élevé,
-+4,5 points au-dessus de la méthode recommandée), pour **14,2 M paramètres contre 42,3 M** pour
-le fine-tuning sélectif recommandé — soit **3× moins**.
+L'hybride est retiré des tableaux (jamais publié : aucune justification de retrait nécessaire).
+Une phrase en Discussion : *la combinaison FT+LoRA n'est pas motivée dès lors que LoRA
+layer3+4 r=32 domine le fine-tuning sur les six terrains.* Limite à déclarer : « LoRA r=32 sur
+layer3+4 + petit LoRA sur layer1+2 » n'a pas été testé directement ; le faisceau d'indices
+(`full_lora` r=8 < `lora_34` r=32 ; Phase 1.3) le rend improbable, pas exclu.
 
-Pire, la Discussion le disqualifie en le comparant à LoRA (« trains far more parameters than
-LoRA ») au lieu de le comparer à la méthode que le papier recommande, face à laquelle il est
-meilleur **sur les deux axes**. En l'état, cela ressemble à du cherry-picking et sera relevé.
+## 4.2 Requalifier le scope `layer3+4`
 
-**Actions :**
-1. Intègre l'hybride comme **ligne pleine** de la table de grille (pas seulement une colonne
-   de la table par terrain), et vérifie que sa valeur ΣΔ = +92,3 apparaît bien dans un tableau —
-   elle n'existe actuellement que dans une phrase du texte.
-2. Fais-en une **quatrième contribution** dans l'introduction :
-   > *combining low-rank adapters on the low-level stages with direct fine-tuning of the
-   > high-level stages reaches the best infrared accuracy of the whole grid at one third of the
-   > trainable parameters of selective fine-tuning.*
-3. Discute-le honnêtement : la variance sur `ir 4.20 m` (±2,1) et le coût de complexité
-   justifient-ils ou non d'en faire la recommandation ? Tranche, et assume.
+Inchangé, renforcé : l'intérêt n'est pas l'économie de paramètres (96.9 % du backbone en FT)
+mais le fait que les étages bas n'ont rien à apprendre du domaine — mesuré en 1.3. Ajouter :
+FT l3+4 est aussi **plus stable** que Full FT sur ir 4.20 m (±2.4 vs ±6.5).
 
-Tu passes de trois à quatre findings **sans une seule expérience nouvelle**.
+## 4.3 PETALface : de la contradiction à la convergence
 
-## 4.2 Requalifier la contribution n°2
+Le tableau de protocoles de la v1 (ancrage absent chez eux, full FT qui dégrade le domaine
+cible, Transformer vs CNN, LoRA double pondéré vs LoRA simple, résolution seule vs résolution
++ IR) reste **exact et utile** — il est reproduit ci-dessous. Ce qui change, c'est l'usage :
 
-Le fine-tuning `layer3+4` représente **96,9 % du backbone**. L'argument actuel — « on garde le
-reste du réseau gelé » — n'économise que 3 % des paramètres par rapport au fine-tuning complet,
-et l'affirmation que le full backbone est « wasteful » est une surinterprétation.
-
-**Reformule :** l'intérêt n'est pas l'économie de paramètres mais le fait que les étages bas
-n'ont **rien à apprendre** du domaine forensique — ce que la Phase 1.3 démontre désormais
-quantitativement. Renvoie explicitement à la figure de déplacement par étage.
-
-## 4.3 Traiter la contradiction avec PETALface ⛔ LE POINT LE PLUS IMPORTANT
-
-**PETALface (Narayan, Nair, Xu, Chellappa, Patel — WACV 2025, arXiv:2412.07771), votre voisin
-le plus proche, conclut l'inverse de vous** : sur TinyFace et BRIAR, le PEFT **surpasse** le
-fine-tuning complet, y compris **sur le domaine cible basse résolution lui-même** (pas
-seulement en préservation haute résolution). Le papier le cite pourtant comme un travail qu'il
-prolonge (« We follow this line of work »). Un relecteur informé attaquera cela en premier.
-
-### 4.3.1 Ce que le protocole de PETALface révèle réellement (lu dans le papier, pas supposé)
-
-> ⚠️ Ces éléments proviennent d'une extraction automatisée du PDF/HTML du papier (deux passes
-> ont donné des chiffres légèrement différents : 71.11 vs 71.32 sur TinyFace). La tendance et
-> l'ordre de grandeur sont cohérents entre les deux extractions, mais **vérifie manuellement
-> sur le PDF source avant toute citation dans le texte final** — une citation inexacte d'un
-> papier concurrent est pire qu'une absence de citation.
+- **Convergence** : PEFT ≥ FT chez eux et chez nous, sur des architectures et des modalités
+  différentes. C'est un résultat de généralisation, pas une défense.
+- **Différence honnête** : chez eux le full FT *dégrade* le domaine cible ; chez nous il
+  l'améliore fortement. L'ancrage 50/50 est l'explication candidate (3.3/3.4 la testent).
+- **Argument inédit** : notre brouillon initial *contredisait* PETALface, et la contradiction
+  était un artefact BN. Suggérer, prudemment, que des résultats « FT > PEFT sur CNN » de la
+  littérature méritent la même vérification. Ne pas accuser un papier en particulier.
+- Vérifier chaque chiffre PETALface sur le PDF source avant citation.
 
 | Élément | PETALface | Ce papier |
 |---|---|---|
-| Ancrage anti-oubli (mélange HQ/dégradé en entraînement) | **Absent** sur tous les baselines — full FT et LoRA naïf entraînés directement sur le train set basse résolution, sans image haute qualité | **Présent** — 50/50 mugshot/dégradé à chaque batch, sur toutes les configurations y compris full FT |
-| Comportement du full FT sur le domaine cible | **Dégrade** la performance cible elle-même (TinyFace : pré-entraîné ~72.7–73.3 → full FT ~71.1–71.3 ; BRIAR : 55.3 → 44.8) | **Améliore** fortement la performance cible, partout |
-| Explication donnée par les auteurs (leur Annexe C) | Gradients initiaux du full FT énormes, « even after clipping » → convergence instable | non mesuré chez nous (à faire, voir 4.3.2.C) |
-| Architecture | Transformer (Swin-B), LoRA sur attention qkv + MLP | CNN (IResNet-50), LoRA sur convs 3×3 |
-| Méthode PEFT comparée | LoRA **double**, pondéré dynamiquement par un score de qualité d'image — pas un LoRA simple | LoRA statique standard |
-| Échelle des données cible | Très rare par identité (TinyFace : ~3 images/identité) | Rare également (SCface), mais compensée par l'ancrage |
-| Modalité couverte | Résolution seule (aucun décalage spectral) | Résolution **et** infrarouge (décalage spectral) |
-
-**Conclusion : la contradiction est réelle, mais les deux protocoles ne sont pas
-superposables.** Trois mécanismes distincts l'expliquent, pas un seul — et les deux premiers
-sont désormais vérifiables dans le texte même de PETALface, donc citables, plutôt qu'une
-hypothèse interne non étayée :
-
-1. **Absence d'ancrage anti-oubli chez PETALface.** Leur full FT n'a jamais vu d'image haute
-   qualité pendant l'entraînement basse résolution → il oublie. Le nôtre en voit à chaque
-   batch → il n'oublie pas. C'est l'explication du plan initial, maintenant étayée par le
-   protocole documenté de PETALface plutôt qu'affirmée sans preuve externe.
-2. **Instabilité d'optimisation du full FT sans contrainte, sur données cible rares.** Chez
-   PETALface, le full FT dégrade la performance sur le domaine cible *lui-même*, pas seulement
-   en HQ — un phénomène d'optimisation (gradients initiaux énormes, leur Annexe C), distinct de
-   l'oubli catastrophique. Chez nous, le full FT n'échoue jamais sur le domaine cible. C'est
-   *peut-être* aussi un effet régularisateur de l'ancrage (pas seulement mémoriel), mais **cela
-   reste une hypothèse non démontrée** tant qu'un contrôle sans ancrage n'a pas été fait
-   (voir 4.3.2.C).
-3. **Architecture et méthode PEFT différentes.** Transformer/attention vs CNN/convolution ;
-   LoRA simple statique (nous) vs LoRA double pondéré par qualité (PETALface — une méthode plus
-   riche que le LoRA nu que nous étudions). Cet axe prolonge notre propre cadrage théorique
-   (Biderman/Shuttleworth viennent aussi du monde Transformer/langage) : nous testons
-   précisément si leurs constats survivent en convolutionnel. Le nommer explicitement en
-   comparaison à PETALface renforce cette originalité au lieu de l'affaiblir.
-
-### 4.3.2 Actions concrètes pour rendre la comparaison solide
-
-**A. Rédaction (obligatoire, aucune expérience nouvelle) :**
-- Rédige le paragraphe de Section 6 (Discussion) autour des **trois mécanismes** ci-dessus,
-  appuyé par le tableau de comparaison de protocoles — la transparence sur la
-  non-comparabilité renforce la crédibilité, elle ne l'affaiblit pas.
-- Cite le fait que le **LoRA naïf seul** de PETALface (pas seulement leur méthode complète)
-  bat déjà leur full FT (75.64 vs ~71.1–71.3 sur TinyFace, à vérifier précisément) : cela montre
-  que la divergence vient du protocole d'entraînement du full FT chez eux, pas d'un baseline
-  volontairement affaibli — argument plus honnête et donc plus solide face à un relecteur.
-- Mentionne que notre étude couvre une modalité (infrarouge, décalage spectral) absente de
-  PETALface (TinyFace/BRIAR = dégradation de résolution uniquement) — différenciation légitime,
-  pas seulement défense.
-- **Vérifie manuellement chaque chiffre/citation PETALface sur le PDF source avant intégration**
-  (voir avertissement 4.3.1).
-
-**B. Mesure passive (prévue dans la version initiale du plan, coût ≈ 0, inférence seule) :**
-- Performance des modèles FT sur les mugshots haute qualité tenus à l'écart après adaptation →
-  preuve directe de l'absence d'oubli (mécanisme 1).
-
-**C. Contrôle actif — NOUVEAU, optionnel, à rattacher à la Phase 3 (1 run, ~1h) :**
-- **FT layer3+4 (ou full) SANS ancrage** (mugshots retirés du batch, 100 % dégradé) — 1 seed
-  suffit pour un signal qualitatif. Si la performance cible se dégrade (comme chez PETALface)
-  ou que la performance mugshot chute fortement, cela **confirme empiriquement** le mécanisme 1
-  (et possiblement 2) au lieu de rester une hypothèse. Si rien ne change, c'est aussi une
-  information honnête à rapporter : cela affaiblirait l'explication par l'ancrage et orienterait
-  vers l'architecture (mécanisme 3) comme explication principale.
-- **Ne dépasse pas une demi-journée dessus.** Si ça ne tient pas dans le budget de la Phase 3
-  (6h déjà allouées à 3.1/3.2), reste sur la mesure passive (B) et assume l'hypothèse non
-  démontrée en toutes lettres dans le texte plutôt que de la sur-affirmer.
-
-**DoD 4.3 :**
-- [ ] Tableau de comparaison de protocoles (PETALface vs nous) présent en Section 6
-- [ ] Paragraphe citant les trois mécanismes, pas un seul
-- [ ] Chiffres/citations PETALface vérifiés manuellement sur le PDF source avant intégration
-- [ ] Mesure mugshot post-adaptation rapportée (4.3.2.B)
-- [ ] (Optionnel) Résultat du contrôle sans ancrage rapporté honnêtement, qu'il confirme ou
-      infirme l'hypothèse du mécanisme 1/2
+| Ancrage HQ/dégradé | Absent | 50/50 à chaque batch |
+| Full FT sur le domaine cible | Dégrade (TinyFace ~72.7→~71.1 ; BRIAR 55.3→44.8) | Améliore fortement |
+| Architecture / cible LoRA | Swin-B, qkv + MLP | IResNet-50, convs 3×3 + fc |
+| Méthode PEFT | LoRA double pondéré par qualité | LoRA simple statique |
+| Modalité | Résolution | Résolution + infrarouge |
+| Lecture BN | sans objet (LayerNorm) | **variable contrôlée** |
 
 ## 4.4 Recadrage pour ICAART
 
-ICAART est une conférence agents & IA, pas vision. **Relevance** est le premier critère noté et
-c'est votre note la plus fragile — elle ne se corrige que par le cadrage.
+*Relevance* est le critère le plus fragile. Le titre de la v1 est faux. Candidats :
 
-1. **Titre** — déplace le centre de gravité vers la question générale. Exemple :
-   *« When Does Low-Rank Adaptation Fail? A Systematic Scope × Mechanism Study on Degraded
-   Infrared Surveillance »*. Le forensique devient le cas d'étude, pas le sujet.
-2. **Introduction** — le premier paragraphe doit poser la question générale (quand l'adaptation
-   à faible rang est-elle suffisante, et peut-on le prédire avant d'entraîner ?), le SCface
-   n'arrivant qu'au troisième.
-3. **Ajoute un paragraphe « Contribution and applicability »** en fin d'introduction. Les
-   guidelines l'exigent noir sur blanc : *« Each paper should clearly indicate the nature of its
-   technical/scientific contribution, and the problems, domains or environments to which it is
-   applicable. »* Assume explicitement le type de contribution — étude empirique systématique
-   avec analyse mécaniste, pas nouvelle méthode. L'assumer est plus solide que le maquiller.
-4. **Topics à la soumission** : *Vision and Perception* en principal,
-   *Privacy, Safety, Security, and Ethical Issues* en secondaire (rareté et sensibilité des
-   données forensiques).
+- *When Low-Rank Adaptation Matches Fine-Tuning: Scope, Rank and a BatchNorm Pitfall in
+  Convolutional Face Recognition under Degradation*
+- *A Frozen Backbone Is Not a Frozen Function: Making LoRA Match Fine-Tuning on Degraded
+  Infrared Surveillance*
+
+Introduction : question générale d'abord (à quelle condition l'adaptation à faible rang
+suffit-elle, et peut-on le mesurer ?), SCface au troisième paragraphe. Paragraphe
+« Contribution and applicability » obligatoire : étude empirique systématique + analyse
+mécaniste + un piège d'implémentation documenté, pas une méthode nouvelle. Topics :
+*Vision and Perception* + *Privacy, Safety, Security, and Ethical Issues*.
 
 ## 4.5 Bibliographie : 11 → ~28 références ⛔
 
-**Le point le plus rentable du plan.** 11 références, c'est visuellement un Short Paper ;
-un Full Paper en porte 25 à 35.
+Corrections de la v1 inchangées (`ye2024lgaf` inventé, auteurs PETALface, `and others`, etc.).
+Ajouts : PEFT (AdaLoRA, DoRA, (IA)³, Adapters, LoRA+), NIR-VIS (CASIA NIR-VIS 2.0, LAMP-HQ),
+TinyFace, IJB-S, MagFace, CurricularFace, Roy & Vetterli, Aghajanyan et al., Li et al.
+**Nouveaux, pour la sous-section BN** : Ioffe & Szegedy 2015 ; Li et al. 2016 (AdaBN) ;
+au moins une référence PEFT vision qui gèle explicitement les BN, et une sur la
+normalisation en transfert (l'affirmation « both readings are found in practice » dans
+`exp_results.tex` a besoin d'une citation ou d'un adoucissement).
 
-### 4.5.1 Corriger les entrées fausses
+## 4.6 Sections à rédiger
 
-| Clé | Problème | Correction |
-|---|---|---|
-| `ye2024lgaf` | **Titre ET auteurs inventés** | Vrai titre : *Local and Global Feature Attention Fusion Network for Face Recognition*. Auteurs : **Wang Yu, Wei Wei**. arXiv:2411.16169 |
-| `narayan2025petalface` | Auteurs faux | **Narayan, Kartik; Nair, Nithin Gopalakrishnan; Xu, Jennifer; Chellappa, Rama; Patel, Vishal M.** — WACV 2025 |
-| `papantoniou2024arc2face` | « Kotsia, Bernhard » conflate deux noms | Vérifier sur la page ECCV/arXiv officielle et corriger |
-| `shekhar2019scface` | Attribution et chiffres (73,3 / 93,5 / 98,0) non vérifiés | Vérifier la source ; si introuvable, retirer la ligne du tableau |
-| `ding2024lorac`, `butt2024heterogeneous` | `and others` | Développer les listes d'auteurs complètes |
+| Section | Contenu | Source | Caractères |
+|---|---|---|---|
+| **3.x A frozen backbone is not a frozen function** (nouvelle) | paramètres vs buffers, deux lectures, mesure 1.4, régression sous baseline, variance ×1.6 | 1.4, 1bis | +3 000 |
+| **6.1 Spectral analysis of the learned updates** (nouvelle) | rang effectif, énergie par rang, déplacement par étage, rendement du rang | 1.1–1.3 | +5 000 |
+| 5.x Embedding-space analysis | 2.2 | 2 | +2 000 |
+| Intervalles bootstrap | 2.3 | 2 | +800 |
+| `fc-only` dans la grille | 3.1 | 3 | +1 000 |
+| PETALface en convergence | 4.3 | — | +1 800 |
+| Un mécanisme suffit | 4.1 | — | +600 |
+| Intro + contribution/applicability | 4.4 | — | +1 200 |
+| Bibliographie | 4.5 | — | +2 500 |
+| **Total** | | | **≈ +18 000** |
 
-**Règle absolue : aucune entrée ne doit rester avec `and others`.** Le rendu apalike produit un
-« et al. » inacceptable en camera-ready, et une référence inventée détectée fait basculer un
-relecteur en mode hostile sur tout le reste du papier.
+## 4.7 Limitations
 
-### 4.5.2 Ajouter ~17 références
+Retirer : « BN est un confondant possible » → devient « BN était un confondant, mesuré et
+contrôlé ». Retirer « n=3 seeds » → IC bootstrap par identité. **Conserver** : un backbone, un
+benchmark, 30 identités de test (protocole non standard), mêmes familles de caméras en train
+et test, hyperparamètres non retunés par rang (explication candidate du recul à r=64),
+« LoRA r=32 + LoRA l1+2 » non testé.
 
-- **PEFT** : AdaLoRA, DoRA, (IA)³, Adapters (Houlsby et al.), prefix-tuning, LoRA+
-- **Cross-spectral / NIR-VIS** : CASIA NIR-VIS 2.0, LAMP-HQ, une méthode NIR-VIS récente
-- **Benchmarks basse qualité** : TinyFace, IJB-S
-- **Losses de reconnaissance** : MagFace, CurricularFace
-- **Fondements théoriques de l'analyse Phase 1** : Roy & Vetterli (effective rank),
-  Aghajanyan et al. (intrinsic dimensionality), Li et al. (intrinsic dimension of objective landscapes)
+## 4.8 Points ouverts dans `exp_results.tex` (à régler avant 5)
 
-Ces trois dernières sont **nécessaires** : elles fondent la métrique que tu utilises en Phase 1.
-
-## 4.6 Nouvelles sections à rédiger
-
-| Section | Contenu | Caractères |
-|---|---|---|
-| **6.1 Spectral analysis of the learned updates** (nouvelle) | Phase 1 : rang effectif, spectres, déplacement par étage. **C'est la section qui justifie le statut Full Paper.** | +5 000 |
-| **5.x Embedding-space analysis** (nouvelle) | Phase 2.2 | +2 500 |
-| Baselines `fc-only` / BitFit dans la grille | Phase 3 | +1 200 |
-| Discussion PETALface | 4.3 | +1 800 |
-| Hybride réhabilité | 4.1 | +1 500 |
-| Recadrage intro + contribution/applicability | 4.4 | +1 200 |
-| Bibliographie étendue | 4.5 | +2 500 |
-| **Total** | | **+15 700** |
-
-27 500 + 15 700 ≈ **43 200 caractères**. Cible atteinte.
-
-## 4.7 Limitations affinées
-
-Les nouvelles mesures en **retirent** deux :
-- le BatchNorm n'est plus un confondant (mesuré en 1.4)
-- le « n = 3 seeds » est remplacé par des IC bootstrap au niveau identité
-
-**Conserve honnêtement** : un seul backbone (IResNet-50), un seul benchmark (SCface),
-30 identités de test — protocole non standard, les protocoles SCface usuels utilisant 43/44 ou
-50 identités, ce qui limite la comparabilité avec la littérature —, et le fait que train et test
-partagent les mêmes familles de caméras (conclusions valables pour de nouvelles identités,
-pas de nouveaux capteurs).
+- [ ] p-values Welch non documentées (§4.2, §4.3) → Phase 2.3
+- [ ] Les deux chiffres dérive-BN cités sans table (layer4 −1.2, layer3+4 +58.7) → note de
+      bas de page « same protocol, three seeds, not tabulated » ou petite table annexe
+- [ ] « both readings are found in practice » → citation ou adoucissement
+- [ ] Nombre d'identités train/test (100 / 30) absent de `tab:setup-data`
+- [ ] Seed 42 de `ft_34` : valeur reconstituée, à confirmer avec le JSON du Drive
 
 **DoD 4 :**
-- [ ] Comptage ≥ 40 000 caractères hors espaces
-- [ ] PDF formaté ≤ 12 pages
-- [ ] ≥ 25 références, **0** entrée avec `and others`, **0** référence non vérifiée
-- [ ] 4 findings annoncés en introduction et repris en conclusion
+- [ ] ≥ 40 000 caractères hors espaces, ≤ 12 pages
+- [ ] ≥ 25 références, 0 `and others`, 0 référence non vérifiée
+- [ ] Les 5 points du récit 4.0 annoncés en introduction et repris en conclusion
 - [ ] Paragraphe « Contribution and applicability » présent
-- [ ] Paragraphe PETALface présent
+- [ ] Sous-section BN et §6.1 spectrale présentes
+- [ ] Tous les points 4.8 fermés
 
 ---
 
 # PHASE 5 — Finalisation et conformité ⛔
 
-## 5.1 Vérification préalable — À FAIRE AVANT TOUT LE RESTE ⛔
+## 5.1 Soumission simultanée — ✅ RÉGLÉ
 
-Le fichier `references.bib` portait l'en-tête « Papier B1 **CoopIS 2026** » et le projet contient
-`coopis26_2.pdf`.
-
-**Si ce papier est actuellement en review à CoopIS ou ailleurs, la soumission à ICAART constitue
-une soumission simultanée** : rejet automatique sans review et signalement éthique INSTICC.
-Tous les papiers sont passés à l'analyse anti-plagiat *avant* review.
-
-**Signale ce point aux auteurs et exige une réponse explicite avant de finaliser.**
-Si la version CoopIS a été publiée ou déposée publiquement, l'outil la détectera.
+La soumission CoopIS est **abandonnée**. Aucun risque de soumission simultanée. Retirer
+néanmoins toute trace de CoopIS des sources (0.8).
 
 ## 5.2 Anonymisation double-blind ⛔
 
-Supprime de `Example.tex` :
-- les noms d'auteurs, les blocs `\author{}` et `\affiliation{}`
-- toute mention de « HANALAB », « ENSI », « Ecole Nationale des Sciences de l'Informatique »,
-  « Manouba », « Tunisia »
-- les adresses e-mail
-- la section remerciements
-- toute formulation auto-identifiante (« in our previous work [ref] we showed… » → citer à la
-  troisième personne)
-
-**Test final :** relis le PDF en te demandant « est-ce que ce texte trahit l'équipe ? ».
-
-**Contrainte associée :** ne déposer le papier ni sur arXiv, ni sur un site personnel, ni sur un
-dépôt institutionnel entre la soumission et la notification.
+Inchangé : auteurs, affiliations (HANALAB, ENSI, Manouba, Tunisia), e-mails, remerciements,
+formulations auto-identifiantes. Ne rien déposer publiquement entre soumission et
+notification — **y compris ne pas lever le `.gitignore` de `paper/` sur le dépôt public.**
 
 ## 5.3 Déclaration outils d'IA
 
-Les guidelines l'exigent dans les remerciements — mais les remerciements doivent être supprimés
-pour le double-blind. **Prépare le texte dès maintenant dans un fichier séparé
-`CAMERA_READY_NOTES.md`, à réinsérer au camera-ready uniquement.**
+Texte préparé dans `CAMERA_READY_NOTES.md`, réinséré au camera-ready uniquement.
 
 ## 5.4 Vérifications finales
 
-- [ ] Caractères hors espaces sur le PDF final : entre 10 000 et 50 000 (viser 40–45 000)
-- [ ] PDF formaté ≤ 12 pages
-- [ ] Compilation propre, aucune référence `??`, aucun `Overfull \hbox` grave
-- [ ] Toutes les figures lisibles en niveaux de gris
-- [ ] Les captions de tables sont **au-dessus**, celles de figures **en dessous** (règle SCITEPRESS)
-- [ ] Anglais relu intégralement
-- [ ] ≤ 9 auteurs
+Inchangé : caractères 40–45 k, ≤ 12 pages, 0 `??`, figures lisibles en niveaux de gris (les
+palettes de `fig_headline.py` sont validées daltonisme et N&B), captions tables au-dessus /
+figures en dessous, anglais relu, ≤ 9 auteurs.
 
 ## 5.5 Soumission
 
-- [ ] Plateforme **PRIMORIS**
-- [ ] Catégorie : **Regular Paper** ⛔ — Position Paper est plafonné à Short Paper d'office.
-      **C'est le seul choix irréversible de toute la procédure.**
-- [ ] Deadline : **22 octobre 2026** (confirmer auprès du secrétariat que les Regular Papers
-      sont bien acceptés à cette date : le libellé du site, « Position Papers / Regular Papers »,
-      est ambigu)
-- [ ] Topics : *Vision and Perception* + *Privacy, Safety, Security, and Ethical Issues*
+PRIMORIS, **Regular Paper** ⛔ (seul choix irréversible), 22 octobre 2026, topics ci-dessus.
 
-## 5.6 Préparer le rebuttal dès maintenant
+## 5.6 Rebuttal — objections anticipées (mises à jour)
 
-Crée `REBUTTAL_PREP.md` listant les objections anticipées et la réponse factuelle à chacune :
-
-| Objection anticipée | Réponse préparée |
+| Objection | Réponse préparée |
 |---|---|
-| « Un seul backbone » | Limitation assumée ; l'analyse spectrale est architecture-agnostique et reproductible |
-| « 30 identités de test » | IC bootstrap au niveau identité ; les écarts principaux restent séparables |
-| « PETALface conclut l'inverse » | Section 6.x : condition d'inversion identifiée (ancrage mugshot vs oubli catastrophique) |
-| « Pourquoi pas l'hybride ? » | Section 4.1 : discuté et tranché explicitement |
-| « Pas de méthode nouvelle » | Contribution revendiquée comme empirique + mécaniste, annoncée dès l'introduction |
+| « Le résultat BN est un bug, pas une contribution » | Les deux lectures sont défendables et présentes dans la pratique ; l'effet est mesuré (36 pts, 6 terrains, 3 portées, variance ×1.6) et explique un désaccord avec la littérature. C'est un résultat reproductible, pas une anecdote |
+| « LoRA > FT est déjà connu (PETALface) » | Sur Transformer, sans ancrage, résolution seule. Nous : CNN, ancrage, infrarouge, et *à quelle condition* — plus le rang effectif qui explique *pourquoi* r=32 |
+| « Un seul backbone / 30 identités » | Limitation assumée ; IC bootstrap par identité ; analyse spectrale architecture-agnostique |
+| « Pourquoi pas l'hybride ? » | Testé, dominé sur les six terrains par un mécanisme seul |
+| « r=64 recule : sur-apprentissage ? » | Hyperparamètres non retunés par rang, déclaré ; rendement du rang mesuré (×2.49) |
+| « Tout le gain vient de fc » | Baseline `fc-only` (3.1) |
+| « Pas de méthode nouvelle » | Contribution empirique + mécaniste + méthodologique, annoncée dès l'introduction |
 
-Un relecteur qui coche « needs more experiments » se répond avec **des résultats**, pas des
-arguments. Garde donc en réserve, non publiées, une ou deux analyses supplémentaires prêtes
-à être ajoutées au rebuttal.
+Garder en réserve, non publiées : CMC, TPIR@FAR, BitFit si fait.
 
 ---
 
-# Repli — si la Phase 1 échoue
+# Repli — réécrit
 
-Si au **jour 6** l'analyse spectrale n'a rien donné (checkpoints perdus, code non fonctionnel,
-résultat plat sans signal) : **arrête les frais.**
-
-Exécute Phases 0, 2, 4.1 à 4.5, 5. Tu obtiens un Short Paper propre, indexé Scopus, sans
-erreur, avec une bibliographie correcte et une discussion honnête. Ce n'est pas un échec :
-c'est une publication indexée qui laisse davantage de marge de nouveauté pour l'extension journal
-prévue ensuite.
-
-**Ne soumets jamais un Full Paper bancal plutôt qu'un Short Paper solide.**
+La Phase 1 ne peut plus échouer : elle est faite, et la grille corrigée porte seule le statut
+Full Paper. Si la Phase 2 (bootstrap, embeddings) ne tient pas dans le temps : soumettre avec
+la grille + Phase 1 + sous-section BN, en retirant **toutes** les affirmations statistiques non
+documentées plutôt qu'en les laissant. Si la Phase 3.1 ne tient pas : déclarer l'objection
+`fc` en limitation, en toutes lettres. **Ne jamais soumettre une affirmation que le dépôt ne
+peut pas reproduire.**
 
 ---
 
@@ -713,58 +509,56 @@ prévue ensuite.
 
 ## Les neuf questions du formulaire ICAART
 
-| Question posée aux relecteurs | Avant | Après | Ce qui le prouve |
+| Question | v1 (brouillon) | Après ce plan | Ce qui le prouve |
 |---|---|---|---|
-| Needs more experimental results? | **Oui** | Non | Analyse spectrale, déplacement par étage, CMC, embeddings, bootstrap, 2 baselines : de ~8 à ~15 expériences rapportées |
-| Needs comparative evaluation? | **Oui** | Non | 5 mécanismes sur un axe de coût croissant au lieu de 2 |
-| Improve critical discussion? | Oui | Non | Section mécaniste, PETALface résolu, hybride argumenté |
-| Figures are Adequate? | Non | Oui | Lipsum retiré, figure LoRA insérée, contradiction corrigée, +4 figures analytiques |
-| References up-to-date and appropriate? | Non | Oui | 11 → 28, 4 entrées fausses corrigées |
-| Abstract and Introduction adequate? | Non (247 mots) | Oui | 200 mots, contribution explicitée |
-| Paper formatting needs adjustment? | **Ne compile pas** | Oui | Phase 0 |
-| Conclusions/Future Work convincing? | Moyen | Oui | 4 findings mesurés, future work concret |
-| Improve English? | Non | Non | Déjà un point fort du papier |
+| Needs more experimental results? | Oui | Non | Grille 9 configs × 3 seeds ± partout, ablation de rang 4 points, contrôle BN 2 bras, spectrale, embeddings, bootstrap, `fc-only` |
+| Needs comparative evaluation? | Oui | Non | `fc-only` → LoRA (4 rangs) → FT sélectif → FT complet ; deux lectures BN |
+| Improve critical discussion? | Oui | Non | Sous-section BN, §6.1 mécaniste, PETALface en convergence, hybride tranché |
+| Figures are Adequate? | Non | Oui | 2 figures par terrain (style unifié), spectres, déplacement, embeddings, IC |
+| References? | Non | Oui | 11 → 28, entrées fausses corrigées |
+| Abstract and Introduction? | Non | Oui | ≤ 200 mots, récit 4.0, contribution explicitée |
+| Formatting? | Ne compile pas | Oui | Phase 0 |
+| Conclusions convincing? | Moyen | Oui | 5 constats mesurés, une recommandation unique, limites déclarées |
+| English? | Bon | Bon | — |
 
 ## Les cinq critères notés
 
-**Technical Quality** — le gain principal. Un papier qui *mesure* le rang effectif des mises à
-jour apprises et le compare à la contrainte imposée par l'adaptateur n'est plus une ablation :
-c'est une analyse mécaniste. Les IC bootstrap remplacent des p-values sur 3 seeds. Le confondant
-BatchNorm est levé explicitement.
+**Technical Quality** — un confondant identifié, mesuré, contrôlé et expliqué ; une grille
+complète avec dispersion partout ; le rang effectif des mises à jour comparé à la contrainte de
+l'adaptateur ; des IC par identité à la place de p-values sur 3 seeds.
 
-**Significance** — le papier ne dit plus seulement « LoRA échoue sur l'IR », mais « voici la
-quantité mesurable qui prédit cet échec ». Un praticien peut calculer le rang effectif sur son
-propre domaine et décider **avant** d'entraîner. Le résultat devient actionnable au-delà de SCface.
+**Significance** — le papier ne dit plus « LoRA échoue sur l'IR » mais « LoRA égale ou dépasse
+le fine-tuning à condition de geler les statistiques BN, à r=32 sur layer3+4, et voici la
+quantité mesurable qui explique ce rang ». Le piège BN est actionnable pour quiconque adapte
+un backbone convolutif avec des adaptateurs — bien au-delà de SCface.
 
-**Originality** — restera la note la plus faible : pas de méthode nouvelle, et il faut l'assumer
-plutôt que le maquiller. Mais la mesure du rang effectif des updates en convolutionnel sur un
-écart spectral visible→NIR n'existe pas dans la littérature. C'est une originalité empirique
-réelle, pas revendiquée à tort.
+**Originality** — pas de méthode nouvelle, à assumer. Mais : la mesure du rang effectif des
+mises à jour en convolutionnel sur un décalage visible→NIR n'existe pas dans la littérature ;
+l'ablation en cloche expliquée par le rendement du rang non plus ; et le piège BN comme
+explication d'un désaccord de littérature est un angle inédit.
 
-**Presentation** — déjà correcte, devient forte : compile, structure hypothèses → mesure →
-explication, figures cohérentes, bibliographie propre.
+**Presentation** — compile, structure question → mesure → explication, figures homogènes,
+bibliographie propre.
 
-**Relevance** — point faible structurel, ICAART n'étant pas une conférence vision. Seul le
-recadrage de 4.4 agit dessus. C'est le risque résiduel non éliminable.
+**Relevance** — point faible structurel (ICAART n'est pas une conférence vision). Le
+recadrage 4.4 et le caractère général du piège BN (tout backbone convolutif) sont les deux
+leviers.
 
 ## Le raisonnement de fond
 
-Un **Short Paper**, c'est un résultat correct sans analyse du *pourquoi*.
-Un **Full Paper**, c'est un résultat **expliqué et mesuré**.
-
-Le papier actuel constate une défaillance et propose une explication non testée. Après ce plan,
-il constate, **mesure la cause**, la relie à un résultat établi du domaine langage, identifie la
-condition qui inverse la conclusion du travail concurrent le plus proche, et en tire une règle
-utilisable ailleurs. C'est la définition d'un Full Paper — et cela ne demande **aucune
-expérimentation nouvelle au-delà de six runs d'une heure**.
+Un Short Paper constate ; un Full Paper **mesure la cause**. Le brouillon constatait un échec de
+LoRA et proposait une explication non testée. Le papier révisé montre que l'échec était un
+artefact, mesure ce que l'artefact fait (par terrain, en variance, dans la représentation),
+établit le résultat corrigé sur une grille complète, en explique le rang par l'analyse
+spectrale, et le situe dans la littérature. C'est un papier plus solide que celui que la v1
+visait — parce que le résultat est plus intéressant que l'hypothèse de départ.
 
 ## Estimation honnête
 
-Ce plan fait passer Full Paper d'improbable à **sérieusement jouable — de l'ordre d'une chance
-sur deux**. Ce qui l'empêche d'aller au-delà : un seul backbone, un seul benchmark, 30 identités
-de test, aucune méthode nouvelle. Ces limites ne sont pas franchissables en six semaines et il ne
-faut pas chercher à les masquer : les déclarer clairement dans les Limitations vaut mieux que de
-laisser un relecteur les découvrir.
+Full Paper : **jouable, mieux qu'une chance sur deux** si les Phases 0, 2.3 et 3.1 sont faites.
+Ce qui reste hors de portée en six semaines : un second backbone, un second benchmark, plus
+d'identités. À déclarer, pas à masquer. Le risque résiduel principal est *Relevance* ; le
+second est le temps de rédaction (≈ +18 000 caractères de texte neuf à écrire proprement).
 
-**Le facteur le plus risqué n'est pas technique mais séquentiel : la Phase 1.**
-Exécute-la dès le jour 2, avant toute rédaction.
+**Le facteur critique est maintenant séquentiel : la Phase 0.** Tant que le papier ne compile
+pas avec `exp_results.tex` branché, personne ne sait combien de pages restent pour le reste.

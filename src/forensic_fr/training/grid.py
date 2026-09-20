@@ -20,6 +20,10 @@ GRID: list[dict] = [
     # log(rang)->performance a comparer au rang effectif mesure en Phase 1.1.
     {"mode": "lora_34", "lora_r": 64, "lora_alpha": 128},
     {"mode": "full_lora", "lora_r": 8, "lora_alpha": 16},
+    # Baseline de controle (Phase 3.1) : fc + tete seulement, backbone gele. A lancer
+    # avec freeze_bn=True comme LoRA -- sinon les stats BN derivent et la baseline
+    # mesure autre chose que "fc seule".
+    {"mode": "fc_only"},
     {"mode": "hybrid", "lora_r": 8, "lora_alpha": 16},
 ]
 DEFAULT_SEEDS = [7, 42, 123]
