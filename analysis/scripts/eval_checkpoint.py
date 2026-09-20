@@ -17,6 +17,9 @@ Sorties (dans <run_dir>/eval/) :
                      probes__T__ids, probes__T__emb (n_p x 512), scores__T (n_p x n_g)
   correct_{run}.csv  run, seed, terrain, probe_idx, iid, top1_iid, rank, correct
 
+Reprise : les checkpoints dont les deux sorties existent deja sont sautes, donc une
+relance apres interruption ne refait que ce qui manque (--force pour tout refaire).
+
 Usage (Colab, apres la section 2 du colab_runner) :
     python analysis/scripts/eval_checkpoint.py --pretrained            # baseline
     python analysis/scripts/eval_checkpoint.py --only lora_34_r32     # 3 seeds r=32
@@ -138,6 +141,8 @@ def main() -> None:
                     help="prefixe(s) de nom de checkpoint, ex: lora_34_r32 full_ft fc_only")
     ap.add_argument("--all", action="store_true", help="tous les checkpoints + le pre-entraine")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--force", action="store_true",
+                    help="re-evalue meme si les sorties existent deja (par defaut : reprise, on saute)")
     args = ap.parse_args()
 
     config = cfg.load_config()
@@ -148,11 +153,17 @@ def main() -> None:
     print(f"Cache d'evaluation : {len(cache['gallery'])} identites en galerie, "
           + ", ".join(f"{t}={len(p)}" for t, p in cache["probes"].items()))
 
+    def done(run_label: str) -> bool:
+        return (out_dir / f"eval_{run_label}.npz").exists() and (out_dir / f"correct_{run_label}.csv").exists()
+
     if args.pretrained or args.all:
         print("\n=== pretrained (baseline) ===")
-        model = load_pretrained(config["pretrained_path"], config["embedding_dim"], args.device)
-        run_one(model, "pretrained", None, cache, args.device, run_dir, out_dir, check=False)
-        del model
+        if done("pretrained") and not args.force:
+            print("  deja evalue -- saute (--force pour refaire)")
+        else:
+            model = load_pretrained(config["pretrained_path"], config["embedding_dim"], args.device)
+            run_one(model, "pretrained", None, cache, args.device, run_dir, out_dir, check=False)
+            del model
 
     paths: list[Path] = []
     if args.checkpoint:
@@ -164,15 +175,20 @@ def main() -> None:
     if not paths and not args.pretrained:
         raise SystemExit("rien a evaluer : utilisez --pretrained, --checkpoint, --only ou --all")
 
+    skipped = 0
     for p in paths:
         print(f"\n=== {p.name} ===")
+        if done(p.stem) and not args.force:
+            print("  deja evalue -- saute (--force pour refaire)")
+            skipped += 1
+            continue
         model, ckpt = load_checkpoint_model(p, config["pretrained_path"], config["embedding_dim"], args.device)
         run_one(model, p.stem, ckpt.get("seed"), cache, args.device, run_dir, out_dir)
         del model
         if args.device.startswith("cuda"):
             torch.cuda.empty_cache()
 
-    print(f"\nSorties dans : {out_dir}")
+    print(f"\n{len(paths) - skipped} evalue(s), {skipped} saute(s). Sorties dans : {out_dir}")
 
 
 if __name__ == "__main__":
